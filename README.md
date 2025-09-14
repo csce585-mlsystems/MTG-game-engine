@@ -1,5 +1,4 @@
-# Project Title  
-## MTG-game-engine
+# MTG-game-engine  
 
 ## Group Info
 cyrusnj@email.sc.edu, jmr40@email.sc.edu,  
@@ -27,9 +26,12 @@ We extend prior MTG draw‑probability calculators by modeling dynamic game stat
 - Reproducible scripts and seeds to run large batches of simulations and aggregate scenario-level results.  
 
 ## References  
-Quinn, T. (2021). Monte Carlo & Magic: the Gathering. https://thquinn.github.io/blog.html?post=6. https://thquinn.github.io/blog.html?post=6 
-Jagajanian, V., & others. (2021). Monte Carlo Tree Search Variations. https://www.cs.hmc.edu/ jagajanian/cs151/. https://www.cs.hmc.edu/ jagajanian/cs151/ 
-Esche, A. (2018). Mathematical programming and Magic: The Gathering [Northern Illinois University]. https://huskiecommons.lib.niu.edu/allgraduate-thesesdissertations/3903/ 
+Quinn, T. (2021). Monte Carlo & Magic: the Gathering. https://thquinn.github.io/blog.html?post=6. https://thquinn.github.io/blog.html?post=6
+ 
+Jagajanian, V., & others. (2021). Monte Carlo Tree Search Variations. https://www.cs.hmc.edu/ jagajanian/cs151/. https://www.cs.hmc.edu/ jagajanian/cs151/
+
+Esche, A. (2018). Mathematical programming and Magic: The Gathering [Northern Illinois University]. https://huskiecommons.lib.niu.edu/allgraduate-thesesdissertations/3903/
+
 
 ---
 
