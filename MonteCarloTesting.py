@@ -5,86 +5,81 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 class GameState:
-    """Minimal game state tracking total cards and lands in deck."""
-    
-    def __init__(self, total_cards: int = 60, lands_in_deck: int = 24):
-        """
-        Initialize game state.
-        
-        Args:
-            total_cards: Total cards currently in deck
-            lands_in_deck: Number of lands currently in deck
-        """
-        self.total_cards = total_cards
-        self.lands_in_deck = lands_in_deck
-    
-    def land_probability(self) -> float:
-        """Return probability of drawing a land from current deck."""
-        if self.total_cards == 0:
-            return 0.0
-        return self.lands_in_deck / self.total_cards
-    
-    def __str__(self) -> str:
-        return f"GameState({self.lands_in_deck} lands / {self.total_cards} total cards)"
+    """Track deck composition with multiple card categories (lands, creatures, spells, etc.)."""
 
-def monte_carlo_land_probability(game_state: GameState, 
-                                num_simulations: int = 10000,
-                                random_seed: Optional[int] = None) -> dict:
+    def __init__(self, card_counts: dict[str, int]):
+        """Initialize game state
+            Args: card_counts: Dictionary mapping category → count
+                    e.g. {"land": 24, "creature": 20, "spell": 16}"""
+        self.card_counts = card_counts
+        self.total_cards = sum(card_counts.values())
+
+    def probability(self, category: str) -> float:
+        """Return probability of drawing a card of the given category."""
+        if self.total_cards == 0 or category not in self.card_counts:
+            return 0.0
+        return self.card_counts[category] / self.total_cards
+
+    def __str__(self) -> str:
+        breakdown = ", ".join(f"{k}: {v}" for k, v in self.card_counts.items())
+        return f"GameState({breakdown}, total={self.total_cards})"
+
+def monte_carlo_probability(game_state: GameState, 
+                            category: str,
+                            num_simulations: int = 10000,
+                            random_seed: Optional[int] = None) -> dict:
     """
-    Monte Carlo simulation to predict probability of drawing a land.
+    Monte Carlo simulation to predict probability of drawing a given category, such as lands.
     
     Args:
-        game_state: Current game state to simulate from
-        num_simulations: Number of Monte Carlo trials to run
-        random_seed: Optional seed for reproducible results
-        
+        category: e.g. "land", "creature", "spell", "<GIVEN-CARD-NAME>, etc"
+
     Returns:
-        Dictionary containing simulation results and detailed statistics
+        dictionary of simulation results and statistics.
     """
+
     start_time = time.time()
-    
     if random_seed is not None:
         random.seed(random_seed)
-    
+
     if game_state.total_cards == 0:
         return {
-            'land_probability': 0.0,
+            'probability': 0.0,
             'simulations_run': num_simulations,
             'execution_time_seconds': time.time() - start_time,
-            'game_state': str(game_state)
+            'game_state': str(game_state),
+            'category': category
         }
-    
-    land_draws = 0
-    base_probability = game_state.land_probability()
-    
-    # Run simulations
+
+    hits = 0
+    base_probability = game_state.probability(category)
+
+    #Run simulations
     for _ in range(num_simulations):
-        # Simple draw: is it a land?
+        #
         if random.random() < base_probability:
-            land_draws += 1
-    
-    end_time = time.time()
-    execution_time = end_time - start_time
-    
-    # Calculate detailed statistics
-    simulated_probability = land_draws / num_simulations
+            hits += 1
+
+    #Calculate detailed statistics
+    simulated_probability = hits / num_simulations
     theoretical_probability = base_probability
     error = abs(simulated_probability - theoretical_probability)
     error_percentage = (error / theoretical_probability * 100) if theoretical_probability > 0 else 0
-    
-    # Performance metrics
-    simulations_per_second = num_simulations / execution_time if execution_time > 0 else 0
-    
+
+    sim_time = time.time() - start_time
+    simulations_per_second = num_simulations / sim_time if sim_time > 0 else 0
+
     return {
-        'land_probability': simulated_probability,
+        'probability': simulated_probability,
         'theoretical_probability': theoretical_probability,
         'absolute_error': error,
         'error_percentage': error_percentage,
         'simulations_run': num_simulations,
-        'land_draws': land_draws,
-        'execution_time_seconds': execution_time,
+        'hits': hits,
+        'execution_time_seconds': sim_time,
         'simulations_per_second': simulations_per_second,
-        'game_state': str(game_state)
+        'game_state': str(game_state),
+        'category': category
     }
 
 def analyze_iterations_vs_accuracy(game_state: GameState, 
@@ -111,7 +106,8 @@ def analyze_iterations_vs_accuracy(game_state: GameState,
         'simulations_per_second': []
     }
     
-    theoretical_prob = game_state.land_probability()
+    #Changing land_probability to probability to reflect changes in GameState
+    theoretical_prob = game_state.probability("land")
     
     print(f"Analyzing {game_state} with theoretical probability: {theoretical_prob:.6f}")
     print("Running analysis...")
@@ -127,7 +123,7 @@ def analyze_iterations_vs_accuracy(game_state: GameState,
         trial_speeds = []
         
         for _ in range(trials):
-            result = monte_carlo_land_probability(game_state, num_simulations=sim_count)
+            result = monte_carlo_probability(game_state, "land", num_simulations=sim_count)
             trial_errors.append(result['error_percentage'])
             trial_times.append(result['execution_time_seconds'])
             trial_speeds.append(result['simulations_per_second'])
@@ -150,42 +146,46 @@ def create_optimization_plots(analysis_results: dict, game_state: GameState):
     speeds = analysis_results['simulations_per_second']
     
     # Create figure with subplots
-    fig, ((ax1, ax2), (ax3, ax4)) = plt.subplots(2, 2, figsize=(15, 12))
-    fig.suptitle(f'Monte Carlo Optimization Analysis\n{game_state}', fontsize=16, fontweight='bold')
+    fig_width = 18
+    base_fig_width = 14
+    scale_factor = fig_width / base_fig_width
+    
+    fig, ((ax1, ax2), (ax3, ax4)) = plt.subplots(2, 2, figsize=(fig_width, 14 * scale_factor))
+    fig.suptitle(f'Monte Carlo Optimization Analysis\n{game_state}', fontsize=16 * scale_factor, fontweight='bold')
+    plt.subplots_adjust(top=0.90)
     
     # Plot 1: Error vs Simulations (log-log)
-    ax1.loglog(sim_counts, errors, 'bo-', linewidth=2, markersize=6)
-    ax1.set_xlabel('Number of Simulations')
-    ax1.set_ylabel('Error Percentage (%)')
-    ax1.set_title('Accuracy vs Iterations')
+    ax1.loglog(sim_counts, errors, 'bo-', linewidth=2, markersize=6 * scale_factor)
+    ax1.set_xlabel('Number of Simulations', fontsize=12 * scale_factor)
+    ax1.set_ylabel('Error Percentage (%)', fontsize=12 * scale_factor)
+    ax1.set_title('Accuracy vs Iterations', fontweight='bold', fontsize=14 * scale_factor)
     ax1.grid(True, alpha=0.3)
     ax1.set_ylim(bottom=0.001)  # Set minimum to avoid log(0)
     
-    # Add theoretical 1/sqrt(n) convergence line
     theoretical_errors = errors[0] * np.sqrt(sim_counts[0] / np.array(sim_counts))
     ax1.loglog(sim_counts, theoretical_errors, 'r--', alpha=0.7, label='Theoretical 1/√n')
-    ax1.legend()
+    ax1.legend(fontsize=10 * scale_factor)
     
     # Plot 2: Execution Time vs Simulations
-    ax2.loglog(sim_counts, times, 'go-', linewidth=2, markersize=6)
-    ax2.set_xlabel('Number of Simulations')
-    ax2.set_ylabel('Execution Time (seconds)')
-    ax2.set_title('Performance vs Iterations')
+    ax2.loglog(sim_counts, times, 'go-', linewidth=2, markersize=6 * scale_factor)
+    ax2.set_xlabel('Number of Simulations', fontsize=12 * scale_factor)
+    ax2.set_ylabel('Execution Time (seconds)', fontsize=12 * scale_factor)
+    ax2.set_title('Performance vs Iterations', fontweight='bold', fontsize=14 * scale_factor)
     ax2.grid(True, alpha=0.3)
     
     # Plot 3: Efficiency (Simulations per Second)
-    ax3.semilogx(sim_counts, np.array(speeds) / 1e6, 'mo-', linewidth=2, markersize=6)
-    ax3.set_xlabel('Number of Simulations')
-    ax3.set_ylabel('Simulations per Second (Millions)')
-    ax3.set_title('Computational Efficiency')
+    ax3.semilogx(sim_counts, np.array(speeds) / 1e6, 'mo-', linewidth=2, markersize=6 * scale_factor)
+    ax3.set_xlabel('Number of Simulations', fontsize=12 * scale_factor)
+    ax3.set_ylabel('Simulations per Second (Millions)', fontsize=12 * scale_factor)
+    ax3.set_title('Computational Efficiency', fontweight='bold', fontsize=14 * scale_factor)
     ax3.grid(True, alpha=0.3)
     
     # Plot 4: Accuracy per Time (Optimization metric)
     accuracy_per_time = 1 / (np.array(errors) * np.array(times))  # Higher is better
-    ax4.loglog(sim_counts, accuracy_per_time, 'co-', linewidth=2, markersize=6)
-    ax4.set_xlabel('Number of Simulations')
-    ax4.set_ylabel('Accuracy per Second (1 / (Error% × Time))')
-    ax4.set_title('Overall Efficiency (Higher = Better)')
+    ax4.loglog(sim_counts, accuracy_per_time, 'co-', linewidth=2, markersize=6 * scale_factor)
+    ax4.set_xlabel('Number of Simulations', fontsize=12 * scale_factor)
+    ax4.set_ylabel('Accuracy per Second (1 / (Error% × Time))', fontsize=12 * scale_factor)
+    ax4.set_title('Overall Efficiency (Higher = Better)', fontweight='bold', fontsize=14 * scale_factor)
     ax4.grid(True, alpha=0.3)
     
     # Find optimal point (maximum accuracy per time)
@@ -195,7 +195,7 @@ def create_optimization_plots(analysis_results: dict, game_state: GameState):
     ax4.text(optimal_sims, max(accuracy_per_time) * 0.5, 
              f'Optimal: {optimal_sims:,}', rotation=90, ha='right', color='red', fontweight='bold')
     
-    plt.tight_layout()
+    plt.tight_layout(pad=5.0 * scale_factor)
     plt.savefig('monte_carlo_optimization.png', dpi=300, bbox_inches='tight')
     plt.show()
     
@@ -251,7 +251,7 @@ if __name__ == "__main__":
     print("=== Monte Carlo Optimization Analysis ===")
     
     # Choose a standard deck for analysis
-    standard_deck = GameState(60, 24)
+    standard_deck = GameState({"land": 24, "creature": 18, "spell": 18})
     
     # Run comprehensive analysis
     print("Running iterations vs accuracy analysis...")
@@ -294,7 +294,7 @@ if __name__ == "__main__":
     
     for name, sim_count in test_sims:
         if sim_count is not None:
-            result = monte_carlo_land_probability(standard_deck, num_simulations=sim_count)
+            result = monte_carlo_probability(standard_deck, "land", num_simulations=sim_count)
             print(f"{name}: {sim_count:,} sims → "
                   f"{result['error_percentage']:.3f}% error, "
                   f"{result['execution_time_seconds']:.6f}s, "
