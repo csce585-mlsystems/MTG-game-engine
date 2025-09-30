@@ -1,6 +1,20 @@
+# FastAPI and web server
 fastapi==0.104.1
 uvicorn[standard]==0.24.0
-pydantic==2.5.0
 python-multipart==0.0.6
-matplotlib==3.7.2
+
+# Data validation and serialization
+pydantic==2.5.0
+
+# Scientific computing (for original Monte Carlo analysis)
 numpy==1.26.0
+matplotlib==3.7.2
+psutil==5.9.5
+
+# Production server
+gunicorn==21.2.0
+
+# Development and testing (optional)
+pytest==7.4.3
+httpx==0.25.2
+requests==2.31.0
