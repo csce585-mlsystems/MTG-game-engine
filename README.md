@@ -1,7 +1,7 @@
 # MTG-game-engine  
 
 ## Group Info
-cyrusnj@email.sc.edu, jmr40@email.sc.edu,  
+cyrusnj@email.sc.edu, jmr40@email.sc.edu, grimesjp@email.sc.edu 
 
 ## Project Summary/Abstract  
 ### This project aims to explore machine learning (ML) applications in complex scenarios by developing a Magic: The Gathering (MTG) game engine. The core of the project is to create a tool that can accurately predict the probability of a player drawing a specific card from their deck. This engine will leverage data from various simulated game states, helping them optimize their strategies. Ultimately, the goal is to demonstrate the power of ML in predicting outcomes within highly variable systems, using MTG as a compelling case study.
