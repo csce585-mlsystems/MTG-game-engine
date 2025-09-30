@@ -12,7 +12,6 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy application code
 COPY backend/ ./backend/
-COPY MonteCarloTesting.py .
 
 # Set working directory to backend
 WORKDIR /app/backend

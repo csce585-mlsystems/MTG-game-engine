@@ -14,7 +14,9 @@ gunicorn==21.2.0
 
 # Optional: For enhanced logging and monitoring
 python-json-logger==2.0.7
+structlog==23.2.0
 
 # Development dependencies (optional)
-# pytest==7.4.3
-# httpx==0.25.2  # for testing FastAPI endpoints
+pytest==7.4.3
+httpx==0.25.2  # for testing FastAPI endpoints
+requests==2.31.0  # for testing and examples
