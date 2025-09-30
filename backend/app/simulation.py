@@ -1,43 +1,46 @@
 """
 Monte Carlo simulation logic for MTG land probability calculations
+Enhanced version supporting multiple card categories
 """
 import random
 import time
-from typing import Optional
+from typing import Optional, Dict
 
 
 class GameState:
-    """Minimal game state tracking total cards and lands in deck."""
+    """Track deck composition with multiple card categories (lands, creatures, spells, etc.)."""
     
-    def __init__(self, total_cards: int = 60, lands_in_deck: int = 24):
+    def __init__(self, card_counts: Dict[str, int]):
         """
-        Initialize game state.
+        Initialize game state with card category support.
         
         Args:
-            total_cards: Total cards currently in deck
-            lands_in_deck: Number of lands currently in deck
+            card_counts: Dictionary mapping category → count (e.g. {"land": 24, "creature": 20, "spell": 16})
         """
-        self.total_cards = total_cards
-        self.lands_in_deck = lands_in_deck
+        self.card_counts = card_counts
+        self.total_cards = sum(card_counts.values())
     
-    def land_probability(self) -> float:
-        """Return probability of drawing a land from current deck."""
-        if self.total_cards == 0:
+    def probability(self, category: str) -> float:
+        """Return probability of drawing a card of the given category."""
+        if self.total_cards == 0 or category not in self.card_counts:
             return 0.0
-        return self.lands_in_deck / self.total_cards
+        return self.card_counts[category] / self.total_cards
     
     def __str__(self) -> str:
-        return f"GameState({self.lands_in_deck} lands / {self.total_cards} total cards)"
+        breakdown = ", ".join(f"{k}: {v}" for k, v in self.card_counts.items())
+        return f"GameState({breakdown}, total={self.total_cards})"
 
 
-def monte_carlo_land_probability(game_state: GameState, 
-                                num_simulations: int = 10000,
-                                random_seed: Optional[int] = None) -> dict:
+def monte_carlo_probability(game_state: GameState, 
+                           category: str,
+                           num_simulations: int = 10000,
+                           random_seed: Optional[int] = None) -> dict:
     """
-    Monte Carlo simulation to predict probability of drawing a land.
+    Monte Carlo simulation to predict probability of drawing a given category.
     
     Args:
         game_state: Current game state to simulate from
+        category: Card category to simulate (e.g. "land", "creature", "spell")
         num_simulations: Number of Monte Carlo trials to run
         random_seed: Optional seed for reproducible results
         
@@ -51,41 +54,42 @@ def monte_carlo_land_probability(game_state: GameState,
     
     if game_state.total_cards == 0:
         return {
-            'land_probability': 0.0,
+            'probability': 0.0,
             'simulations_run': num_simulations,
             'execution_time_seconds': time.time() - start_time,
-            'game_state': str(game_state)
+            'game_state': str(game_state),
+            'category': category
         }
     
-    land_draws = 0
-    base_probability = game_state.land_probability()
+    hits = 0
+    base_probability = game_state.probability(category)
     
     # Run simulations
     for _ in range(num_simulations):
-        # Simple draw: is it a land?
         if random.random() < base_probability:
-            land_draws += 1
-    
-    end_time = time.time()
-    execution_time = end_time - start_time
+            hits += 1
     
     # Calculate detailed statistics
-    simulated_probability = land_draws / num_simulations
+    simulated_probability = hits / num_simulations
     theoretical_probability = base_probability
     error = abs(simulated_probability - theoretical_probability)
     error_percentage = (error / theoretical_probability * 100) if theoretical_probability > 0 else 0
     
-    # Performance metrics
-    simulations_per_second = num_simulations / execution_time if execution_time > 0 else 0
+    sim_time = time.time() - start_time
+    simulations_per_second = num_simulations / sim_time if sim_time > 0 else 0
     
     return {
-        'land_probability': simulated_probability,
+        'probability': simulated_probability,
         'theoretical_probability': theoretical_probability,
         'absolute_error': error,
         'error_percentage': error_percentage,
         'simulations_run': num_simulations,
-        'land_draws': land_draws,
-        'execution_time_seconds': execution_time,
+        'hits': hits,
+        'execution_time_seconds': sim_time,
         'simulations_per_second': simulations_per_second,
-        'game_state': str(game_state)
+        'game_state': str(game_state),
+        'category': category
     }
+
+
+# Remove the legacy wrapper function - we'll use monte_carlo_probability directly
