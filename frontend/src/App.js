@@ -6,7 +6,7 @@ function App() {
   const [data, setData] = useState(null);
 
   useEffect(() => {
-    fetch("http://localhost:8000/")
+    fetch("http://0.0.0.0:8000/")
       .then((res) => res.json())
       .then((json) => setData(json));
   }, []);
