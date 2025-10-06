@@ -1,0 +1,205 @@
+"""
+DBConfig.py
+
+Helpful Notes: Designed for either .json or .txt 
+can be changed for other formats later but these were the ones I could think of.
+
+Note: 
+JSON Expected a list of card objects.
+Plain Text Expected "Key: Value" Pairs
+"""
+import sqlite3
+import json
+import argparse
+import os
+from datetime import datetime
+
+Default_DB = "card.db"
+
+SCHEMA = """
+PRAGMA foreign_keys = ON;
+
+CREATE TABLE IF NOT EXISTS card_sources (
+    id INTEGER PRIMARY KEY,
+    source_name TEXT,
+    import_time TEXT,
+    raw_filename TEXT
+    );
+
+CREATE TABLE IF NOT EXISTS cards (
+    id INTEGER PRIMARY KEY,
+    name TEXT NOT NULL,
+    set_code TEXT,
+    mana_cost TEXT,
+    type_line TEXT,
+    oracle_text TEXT,
+    colors TEXT,
+    supertypes TEXT,
+    subtypes TEXT,
+    power TEXT,
+    toughness TEXT,
+    loyalty TEXT,
+    image_url TEXT,
+    meta TEXT,
+    created_at TEXT,
+    updated_at TEXT,
+    source_id INTEGER REFRENCES card_sources(id) ON DELETE SET NULL,
+    UNIQUE(name, set_code)
+    );
+CREATE INDEX IF NOT EXISTS idx_card_name ON cards(name);
+CREATE INDEX IF NOT EXISTS idx_cards_set ON cards(set_code);
+"""
+
+def init_db(conn):
+    conn.executescript(SCHEMA)
+    conn.commit()
+
+def normalize_list_field(value):
+    if value is None: 
+        return None
+    if isinstance(value,list):
+        return json.dumps(value,ensure_ascii=False)
+    if isinstance(value,str):
+        if "," in value:
+            parts = [p.strip() for p in value.split(",") if p.strip()]
+            return json.dumps(parts,ensure_ascii=False)
+        if value.strip() == "":
+            return None
+        return json.dumps([value.strip()],ensure_ascii=False)
+    return json.dumps([value], ensure_ascii=False)
+def upsert_card(conn, card_obj, source_id = None):
+    """ Insert or update card records by unique constraints (name, set_code).
+        Stores list fields as JSON strings.
+    """
+    cur = conn.cursor()
+
+    name = card_obj.get("name")
+    set_code = card_obj.get("set_code")
+    mana_cost = card_obj.get("mana_cost")
+    type_line = card_obj.get("type_line")
+    oracle_text = card_obj.get("oracle_text")
+    colors = normalize_list_field(card_obj.get("colors"))
+    supertypes = normalize_list_field(card_obj.get("supertypes"))
+    subtypes = normalize_list_field(card_obj.get("subtypes"))
+    power = card_obj.get("power")
+    toughness = card_obj.get("toughness")
+    loyalty = card_obj.get("loyalty")
+    image_url = card_obj.get("image_url")
+    meta = json.dumps(card_obj.get("meta",{}),ensure_ascii=False) if card_obj.get("meta") else None
+    if meta is None: 
+        known = {"name", "set_code", "mana_cost", "type_line", "oracle_text", "colors", "supertypes", "subtypes", "power", "toughness", "loyalty", "image_url"}
+        meta_blob = {k:v for k,v in card_obj.items() if k not in known}
+        meta = meta_blob if meta_blob else None
+    meta_json = json.dumps(meta, ensure_ascii=False) if meta is not None else None
+
+    now = datetime.utcnow().isoformat()
+    update_sql = """
+    UPDATE cards SET
+        language = ?, mana_cost = ?, type_line = ?, oracle_text = ?, colors = ?, supertypes = ?, subtypes = ?,
+        power = ?, toughness = ?, loyalty = ?, image_url = ?, meta = ?, updated_at = ?, source_id = ?
+    WHERE name = ? AND (set_code = ? or set_code = ?);
+    """
+    cur.execute(update_sql, (
+        mana_cost, type_line, oracle_text, colors, supertypes, subtypes,
+        power, toughness, loyalty, image_url, meta_json, now, source_id,
+        name, set_code
+    ))
+    if cur.rowcount > 0:
+        conn.commit()
+        return
+    
+    insert_sql = """
+    INSERT INTO cards (
+        name, set_code, mana_cost, type_line, oracle_text, colors, 
+        supertypes, subtypes, power, toughness, loyalty, image_url, meta, create_at, updated_at, source_id
+        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+    """
+    cur.execute(insert_sql, (
+        name, set_code, mana_cost, type_line, oracle_text, colors, 
+        supertypes, subtypes, power, toughness, loyalty, image_url, meta_json, now, now, source_id
+    ))
+    conn.commit()
+
+def import_json_file(conn, filename, source_name = None):
+    with open(filename, "r", encoding = "utf-8") as f:
+        payload = json.load(f)
+    if not isinstance(payload,list):
+        raise ValueError("JSON file doesn't contain list of card objects.")
+    cur = conn.cursor()
+    now = datetime.utcnow().isoformat()
+    cur.execute("INSERT INTO card_sources (source_name, import_time, raw_filename) VALUES (?,?,?)",
+                (source_name or "json_import", now, os.path.basename(filename)))
+    source_id = cur.lastrowid
+    conn.commit()
+    for obj in payload:
+        upsert_card(conn,obj,source_id = source_id)
+def parse_plain_text(block):
+    card = {}
+    for line in block.splitlines():
+        if ":" not in line: 
+            continue
+        key, value = line.split(":",1)
+        key = key.strip().lower()
+        val = val.strip()
+        if key in("name",'card', 'title'):
+            card['name'] = val
+        elif key in ("set","set_code","setcode"):
+            card['set_code'] = val
+        elif key in ("mana","mana_cost","cost"):
+            card['mana_cost'] = val
+        elif key in ("type","type_line","typeline"):
+            card['type_line'] = val
+        elif key in ("text","oracle","oracle_text","description",'rules'):
+            card['oracle_text'] = val
+        elif key in ("color","colors","color_identity","color identity"):
+            parts = [p.strip() for p in val.split(",") if p.strip()]
+            card['colors'] = parts
+        elif key in ("supertype","supertypes"):
+            card['supertypes'] = [p.strip() for p in val.split(',') if p.strip()]
+        elif key in ("subtype","subtypes"):
+            card['subtypes'] = [p.strip() for p in val.split(',') if p.strip()]
+        elif key in ("power"):
+            card['power'] = val
+        elif key in ("toughness"):
+            card['toughness'] = val
+        elif key in ("loyalty"):
+            card['loyalty'] = val
+        elif key in ("image","image_url","imageurl","img"):
+            card['image_url'] = val
+        else:
+            card.setdefault('meta',{})[key] = val
+    return card
+def import_text_file(conn, filename, source_name = None):
+    text = open(filename, "r", encoding="utf-8").read()
+    blocks = [b.strip() for b in text.split("\n\n") if b.strip()]
+    cur = conn.cursor()
+    now = datetime.utcnow().isoformat()
+    cur.execute("INSERT INTO card_sources (source_name, import_time, raw_filename) VALUES (?,?,?)",
+                (source_name or "text_import", now, os.path.basename(filename)))
+    source_id = cur.lastrowid
+    conn.commit()
+    for block in blocks:
+        card = parse_plain_text(block)
+        upsert_card(conn,card,source_id = source_id)
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--db", default = Default_DB, help = "Path to sqlite DB")
+    parser.add_argument("--json", help = "Path to JSON file with a list of card object")
+    parser.add_argument("--text", help="path to plain-text file")
+    parser.add_argument("--init-only", action="store_true", help = "Create DB and EXit")
+    args = parser.parse_args()
+
+    conn = sqlite3.connect(args.db)
+    init_db(conn)
+    if args.init_only:
+        print(f"Initialized DB at {args.db}")
+        return
+    if args.json:
+        import_json_file(conn, args.json, source_name = "frontend_json_upload")
+        print(f"Imported JSON file {args.json}")
+    if args.text:
+        import_text_file(conn, args.text, source_name = "frontend_plaintext_import")
+        print(f"Imported text file {args.text}")
+    conn.close()
+if __name__ == "__main__":
+    main()
