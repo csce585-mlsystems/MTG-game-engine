@@ -82,7 +82,7 @@ The core simulation engine features:
 - **Performance Trade-offs**: Memory vs speed optimization
 - **Resource Limits**: Identified memory constraints
 
-**Visualization**: ![accuracy benchmarks](/home/bir4y/Desktop/csce585/MTG-game-engine/preliminaryTesting/monte_carlo_detailed_error_analysis.png)
+**Visualization**: ![accuracy benchmarks](/preliminaryTesting/monte_carlo_detailed_error_analysis.png)
 
 ## Performance Recommendations
 
