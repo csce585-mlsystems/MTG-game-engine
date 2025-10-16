@@ -90,6 +90,3 @@ def monte_carlo_probability(game_state: GameState,
         'game_state': str(game_state),
         'category': category
     }
-
-
-# Remove the legacy wrapper function - we'll use monte_carlo_probability directly

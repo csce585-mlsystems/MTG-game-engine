@@ -1,23 +1,29 @@
 # Use Python 3.11 slim image
 FROM python:3.11-slim
 
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    curl \
+    gcc \
+    && rm -rf /var/lib/apt/lists/*
+
 # Set working directory
 WORKDIR /app
 
-# Copy requirements first for better caching
-COPY requirements.txt .
+# Upgrade pip and install wheel
+RUN pip install --upgrade pip setuptools wheel
 
-# Install dependencies
-RUN pip install --no-cache-dir -r requirements.txt
+# Copy requirements first for better caching
+COPY backend/requirements.txt .
+
+# Install dependencies with verbose output
+RUN pip install --no-cache-dir --verbose -r requirements.txt
 
 # Copy application code
-COPY backend/ ./backend/
-
-# Set working directory to backend
-WORKDIR /app/backend
+COPY backend/ .
 
 # Expose port
 EXPOSE 8000
 
 # Command to run the application
-CMD ["uvicorn", "app.api:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["sh", "-c", "echo 'MTG Game Engine Backend starting...' && echo 'Backend API available at: http://localhost:8000' && echo 'API Documentation available at: http://localhost:8000/docs' && echo 'Health check available at: http://localhost:8000/health' && echo 'Starting FastAPI server...' && uvicorn app.api:app --host 0.0.0.0 --port 8000"]
