@@ -34,7 +34,7 @@ The core simulation engine features:
 - **Optimal Range**: 10,000-100,000 simulations provide good accuracy-performance balance
 - **Consistency**: Multiple trials show low variance in error measurements
 
-**Visualization**: `../preliminaryTesting/monte_carlo_optimization_multi_trial.png`
+**Visualization**: ![image](/preliminaryTesting/monte_carlo_detailed_error_analysis.png`)
 
 ### 2. Detailed Error Analysis
 **Objective**: Understand error distribution and statistical properties
@@ -51,7 +51,7 @@ The core simulation engine features:
 - **Practical Threshold**: <1% error achievable with 50,000+ simulations
 - **Performance Trade-off**: Diminishing accuracy gains beyond 100,000 simulations
 
-**Visualization**: `../preliminaryTesting/monte_carlo_detailed_error_analysis.png`
+**Visualization**: ![image](/preliminaryTesting/monte_carlo_hardware_benchmark.png)
 
 ### 3. Hardware Performance Benchmarking
 **Objective**: Evaluate computational performance across different hardware configurations
