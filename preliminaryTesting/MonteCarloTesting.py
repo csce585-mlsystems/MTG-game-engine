@@ -136,7 +136,7 @@ def analyze_iterations_vs_accuracy(game_state: GameState,
         trial_speeds = []
         trial_probabilities = []
         
-        for _ in range(trials):
+        for _ in range(num_trials):
             result = monte_carlo_probability(game_state, "land", num_simulations=sim_count)
             trial_errors.append(result['error_percentage'])
             trial_times.append(result['execution_time_seconds'])
