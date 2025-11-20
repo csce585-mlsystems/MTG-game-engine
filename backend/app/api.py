@@ -4,21 +4,14 @@ FastAPI endpoints for MTG land simulation
 from fastapi import FastAPI, HTTPException, Request, Response, Query #Added Response, Query
 import time
 import logging
-from typing import Callable, List, Optional #Added List, Optional
-import json
+from typing import Optional, List
 
-from .models import SimulationRequest, SimulationResponse, HealthResponse
-from .simulation import GameState, monte_carlo_probability
+from .models import SimulationRequest, SimulationResponse, HealthResponse, CardListResponse, CardSearchRequest, CardNamesRequest, CardBase, ResolveDeckRequest, ResolveDeckResponse, SimulationByNamesRequest, SimulationByCardRequest
+from .simulation import GameState, monte_carlo_probability, monte_carlo_probability_for_successes
 from datetime import datetime #Added Datetime
-import sqlite3
-from pydantic import BaseModel
-import asyncio
-from concurrent.futures import ThreadPoolExecutor
-import os
+from .repository import run_db, count_cards, query_cards, get_cards_by_names, DB_PATH
+from .deck_service import resolve_deck
 
-#Database Path from Environment Variable or Default
-DB_PATH = os.environ.get("SCRYFALL_DB_PATH", "data/scryfall.db")
-executor = ThreadPoolExecutor(max_workers = 4)
 # Configure logging
 logging.basicConfig(
     level=logging.INFO,
@@ -37,113 +30,8 @@ app = FastAPI(
     version="2.0.0"
 )
 
-#Pydantic Response Models
-class CardBase(BaseModel):
-    id: str
-    oracle_id: Optional[str] = None
-    name: Optional[str] = None
-    set_code: Optional[str] = None
-    set_name: Optional[str] = None
-    collector_number: Optional[str] = None
-    rarity: Optional[str] = None
-    mana_cost: Optional[str] = None
-    cmc: Optional[float] = None
-    type_line: Optional[str] = None
-    oracle_text: Optional[str] = None
-    power: Optional[str] = None
-    toughness: Optional[str] = None
-    colors: Optional[dict] = None
-    color_identity: Optional[dict] = None
-    image_uris: Optional[dict] = None
+# API endpoints only below
 
-class CardListResponse(BaseModel):
-    total: int
-    page: int
-    per_page: int
-    results: List[CardBase]
-
-#DB Helpers
-
-def _open_conn():
-    if not os.path.exists(DB_PATH):
-        raise FileNotFoundError(f"DB not found at {DB_PATH}. Run Importer First")
-    conn = sqlite3.connect(DB_PATH, check_same_thread=False)
-    # Use named access for rows to match usage elsewhere (row["id"], row.keys(), etc.)
-    conn.row_factory = sqlite3.Row
-    return conn
-def _row_to_card(row: sqlite3.Row) -> CardBase:
-    def _maybe_load(val):
-        if val is None:
-            return None
-        try:
-            return json.loads(val)
-        except Exception:
-            return val
-    return CardBase(
-        id = row["id"],
-        oracle_id = row["oracle_id"],
-        name = row["name"],
-        set_code = row["set_code"],
-        set_name = row["set_name"],
-        collector_number = row["collector_number"],
-        rarity = row["rarity"],
-        mana_cost = row["mana_cost"],
-        cmc = row["cmc"],
-        type_line = row["type_line"],
-        oracle_text = row["oracle_text"],
-        power = row["power"],
-        toughness = row["toughness"],
-        colors = _maybe_load(row["colors"]) if "colors" in row.keys() else None,
-        color_identity = _maybe_load(row["color_identity"]) if "color_identity" in row.keys() else None,
-        image_uris = _maybe_load(row["image_uris"])if "image_uris" in row.keys() else None,                        
-    )
-
-async def run_db(fn, *args, **kwargs):
-    loop = asyncio.get_event_loop()
-def _count_cards(where_clause: str = "", params: tuple = ()):
-    conn = _open_conn()
-    sql = "SELECT COUNT(*) as count FROM cards" + where_clause
-    cur = conn.execute(sql, params)
-    return cur.fetchone()["count"]
-def _query_cards(offset: int, limit:int, where_clause: str = "", params: tuple = (), order_by: str = "name"):
-    conn = _open_conn()
-    try:
-        # Whitelist acceptable columns for ordering to avoid SQL injection
-        ALLOWED_ORDER_COLUMNS = {"name", "set_name", "set_code", "collector_number", "rarity", "cmc"}
-        if order_by not in ALLOWED_ORDER_COLUMNS:
-            order_by = "name"
-
-        sql = f"""
-            SELECT id, oracle_id, name, set_code, set_name, collector_number,
-            rarity, mana_cost, cmc, type_line, oracle_text, power, toughness,
-            colors, color_identity, image_uris
-            FROM cards
-            {where_clause}
-            ORDER BY {order_by} COLLATE NOCASE
-            LIMIT ? OFFSET ?
-            """
-        cur = conn.execute(sql, params + (limit, offset))
-        rows = cur.fetchall()
-        return [_row_to_card(r) for r in rows]
-    finally:
-        conn.close()
-def _get_card_by_id(card_id: str):
-    conn = _open_conn()
-    try:
-        sql = """
-        SELECT id, oracle_id, name, set_code, set_name, collector_number,
-        rarity, mana_cost, cmc, type_line, oracle_text, power, toughness,
-        colors, color_identity, image_uris
-        FROM cards
-        WHERE id = ?
-        """
-        cur = conn.execute(sql, (card_id,))
-        row = cur.fetchone()
-        if not row:
-            return None
-        return _row_to_card(row)
-    finally:
-        conn.close()
 @app.get("/", response_model=dict)
 async def root():
     """Root endpoint with API information"""
@@ -174,43 +62,114 @@ async def health_check():
     return HealthResponse(
         status="healthy",
         timestamp=time.time(),
-        version="1.0.0"
+        version="1.0.0",
+        db_path=DB_PATH
     )
 
-@app.get("/health")
-async def health():
-    return {"status": "ok", "db_path": DB_PATH}
-
-@app.get("/cards", response_model = CardListResponse)
-async def list_cards(
-    q: Optional[str] = Query(None, description = "Search query for card name or text"),
-    set_code: Optional[str] = Query(None, description = "Filter by set code"),
-    rarity: Optional[str] = Query(None, description = "Filter by card rarity"),
-    page: int = Query(1, ge=1),
-    per_page: int = Query(25, ge=1, le=250),
-):
+@app.post("/cards", response_model = CardListResponse)
+async def list_cards(request: CardSearchRequest):
     where_clauses = []
     params = []
-    if q:
-        where_clauses.append("name LIKE ?")
-        params.append(f"%{q}%")
-    if set_code:
+    if request.q:
+        where_clauses.append("name LIKE ? COLLATE NOCASE")
+        params.append(f"%{request.q}%")
+    if request.set_code:
         where_clauses.append("LOWER(set_code) = LOWER(?)")
-        params.append(set_code)
-    if rarity:
+        params.append(request.set_code)
+    if request.rarity:
         where_clauses.append("LOWER(rarity) = LOWER(?)")
-        params.append(rarity)
-        where_sql = ("WHERE" + " AND ".join(where_clauses)) if where_clauses else ""
-        offset = (page -1) *per_page
+        params.append(request.rarity)
+    if request.names:
+        placeholders = ",".join(["?"] * len(request.names))
+        where_clauses.append(f"name COLLATE NOCASE IN ({placeholders})")
+        params.extend(request.names)
+    where_sql = (" WHERE " + " AND ".join(where_clauses)) if where_clauses else ""
+    offset = (request.page - 1) * request.per_page
 
-        total = await run_db(_count_cards, where_sql, tuple(params))
-        results = await run_db(_query_cards, offset, per_page, where_sql, tuple(params))
+    total = await run_db(count_cards, where_sql, tuple(params))
+    results = await run_db(query_cards, offset, request.per_page, where_sql, tuple(params))
     return CardListResponse(
         total=total,
-        page=page,
-        per_page=per_page,
+        page=request.page,
+        per_page=request.per_page,
         results=results
     )
+
+
+@app.post("/cards/names", response_model=List[CardBase])
+async def get_cards_by_names_endpoint(request: CardNamesRequest):
+    results = await run_db(get_cards_by_names, request.names)
+    return results
+
+
+@app.post("/cards/resolve-deck", response_model=ResolveDeckResponse)
+async def resolve_deck_endpoint(request: ResolveDeckRequest):
+    # CPU-bound but light; run sync in thread for consistency
+    result = await run_db(resolve_deck, request.deck)
+    return result
+
+
+@app.post("/simulate/by-names", response_model=SimulationResponse)
+async def simulate_by_names(request: SimulationByNamesRequest):
+    # Resolve deck and derive counts
+    resolved = await run_db(resolve_deck, request.deck)
+    game_state = GameState(card_counts=resolved.derived_counts)
+
+    # Collect oracle texts for selected names (if provided)
+    oracle_texts = None
+    if request.oracle_names:
+        lower = {n.lower() for n in request.oracle_names}
+        oracle_texts = [
+            rc.card.oracle_text for rc in resolved.resolved
+            if rc.card.name and rc.card.name.lower() in lower and rc.card.oracle_text
+        ]
+
+    result = monte_carlo_probability(
+        game_state=game_state,
+        category=request.category,
+        num_simulations=request.num_simulations,
+        random_seed=request.random_seed,
+        oracle_texts=oracle_texts
+    )
+    return SimulationResponse(**result)
+
+
+@app.post("/simulate/by-card", response_model=SimulationResponse)
+async def simulate_by_card(request: SimulationByCardRequest):
+    # Resolve deck and compute successes (sum counts for target names)
+    resolved = await run_db(resolve_deck, request.deck)
+    total_cards = sum(resolved.derived_counts.values())
+    target_set = {n.lower() for n in request.target_names}
+    successes = sum(rc.count for rc in resolved.resolved if rc.card.name and rc.card.name.lower() in target_set)
+
+    # Determine categories of target cards for tutor matching
+    from .deck_service import pick_category
+    target_categories = list({pick_category(rc.card.type_line or "") for rc in resolved.resolved if rc.card.name and rc.card.name.lower() in target_set})
+
+    # Collect oracle texts for selected names (if provided)
+    oracle_texts = None
+    if request.oracle_names:
+        lower = {n.lower() for n in request.oracle_names}
+        oracle_texts = [
+            rc.card.oracle_text for rc in resolved.resolved
+            if rc.card.name and rc.card.name.lower() in lower and rc.card.oracle_text
+        ]
+
+    result = monte_carlo_probability_for_successes(
+        total_cards=total_cards,
+        successes=successes,
+        num_simulations=request.num_simulations,
+        random_seed=request.random_seed,
+        oracle_texts=oracle_texts,
+        target_categories=target_categories
+    )
+
+    # Adapt to SimulationResponse schema
+    result.update({
+        'game_state': str(GameState(card_counts=resolved.derived_counts)),
+        'category': 'specific_cards'
+    })
+    return SimulationResponse(**result)
 
 @app.post("/simulate", response_model=SimulationResponse)
 async def simulate_card_probability(request: SimulationRequest):
@@ -272,7 +231,8 @@ async def simulate_card_probability(request: SimulationRequest):
             game_state=game_state,
             category=request.category,
             num_simulations=request.num_simulations,
-            random_seed=request.random_seed
+            random_seed=request.random_seed,
+            oracle_texts=request.oracle_texts
         )
         sim_duration = time.time() - sim_start
         endpoint_duration = time.time() - endpoint_start
