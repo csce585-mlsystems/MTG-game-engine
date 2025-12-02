@@ -2,11 +2,16 @@
   position: relative;
   border-radius: 6px;
   overflow: hidden;
+  user-select: none;
+  -webkit-user-select: none;
+  -ms-user-select: none;
 }
 
 .card-item.grid {
-  width: 140px;
+  width: 100%;
   aspect-ratio: 0.72;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.25);
+  background: #111;
 }
 
 .grid-img {
@@ -20,10 +25,24 @@
   bottom: 4px;
   right: 4px;
   padding: 2px 6px;
-  font-size: 11px;
+  font-size: 12px;
   color: #fff;
-  background: rgba(0, 0, 0, 0.55);
+  background: rgba(0, 0, 0, 0.7);
   border-radius: 4px;
+  text-shadow: 0 1px 2px rgba(0,0,0,0.8);
+}
+
+.grid-count {
+  position: absolute;
+  top: 4px;
+  left: 4px;
+  padding: 1px 6px;
+  font-size: 12px;
+  color: #fff;
+  background: rgba(0, 0, 0, 0.6);
+  border: 1px solid rgba(255,255,255,0.18);
+  border-radius: 10px;
+  line-height: 1.2;
 }
 
 .card-item.list {
@@ -44,15 +63,16 @@
 .list-name {
   width: 100%;
   padding: 6px 10px;
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 600;
   color: #fff;
   background: linear-gradient(to top,
-      rgba(0, 0, 0, 0.7),
+      rgba(0, 0, 0, 0.8),
       rgba(0, 0, 0, 0));
   display: flex;
   justify-content: space-between;
   align-items: center;
+  text-shadow: 0 1px 2px rgba(0,0,0,0.9);
 }
 
 .list-count {
@@ -63,10 +83,10 @@
 }
 
 .list-prob {
-  background: rgba(0, 0, 0, 0.55);
+  background: rgba(0, 0, 0, 0.7);
   padding: 2px 6px;
   border-radius: 4px;
-  font-size: 12px;
+  font-size: 13px;
 }
 
 .card-item.zone {
@@ -80,13 +100,32 @@
   object-fit: cover;
 }
 
+.effect-toggle {
+  position: absolute;
+  top: 6px;
+  left: 6px;
+  padding: 2px 6px;
+  border-radius: 6px;
+  font-size: 11px;
+  line-height: 1;
+  color: #eaeaea;
+  background: rgba(0,0,0,0.6);
+  border: 1px solid rgba(255,255,255,0.18);
+  cursor: pointer;
+}
+.effect-toggle.active {
+  background: rgba(76, 175, 80, 0.6);
+  border-color: rgba(76,175,80,0.8);
+  color: #fff;
+}
+
 .card-star {
   position: absolute;
   top: 6px;
   right: 6px;
-  background: rgba(0, 0, 0, 0.5);
-  color: #888;
-  border: 1px solid rgba(255, 255, 255, 0.15);
+  background: rgba(0, 0, 0, 0.65);
+  color: #c7c7c7;
+  border: 1px solid rgba(255, 255, 255, 0.22);
   border-radius: 4px;
   padding: 1px 4px;
   cursor: pointer;
@@ -94,5 +133,5 @@
 
 .card-star.active {
   color: gold;
-  background: rgba(255, 215, 0, 0.25);
+  background: rgba(255, 215, 0, 0.3);
 }

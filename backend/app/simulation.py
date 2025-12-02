@@ -2,12 +2,126 @@
 Monte Carlo simulation logic for MTG land probability calculations
 Enhanced version supporting multiple card categories
 """
-import random
-import time
-import re
+import json
 import math
-from typing import Optional, Dict, List
+import os
+import random
+import re
+import time
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Dict, List, Optional, Set
 
+# Inside backend container, /app is backend root; default effects file is data/effects.json
+EFFECTS_CATALOG_PATH = Path(os.environ.get("EFFECTS_CATALOG_PATH", "data/effects.json"))
+_EFFECTS_CACHE: Optional[Dict[str, List[dict]]] = None
+
+
+@dataclass
+class EffectModifiers:
+    extra_draws: float = 0.0
+    self_mill: int = 0
+    tutor_any: bool = False
+    tutor_categories: Set[str] = field(default_factory=set)
+    shuffle: bool = False
+
+
+def _load_effects_catalog() -> Dict[str, List[dict]]:
+    global _EFFECTS_CACHE
+    if _EFFECTS_CACHE is None:
+        try:
+            raw = json.loads(EFFECTS_CATALOG_PATH.read_text(encoding="utf-8"))
+        except (FileNotFoundError, json.JSONDecodeError):
+            raw = {}
+        _EFFECTS_CACHE = {k.lower(): v for k, v in raw.items()}
+    return _EFFECTS_CACHE
+
+
+def _estimate_scry_draws(count: int, strategy: Optional[str], category: Optional[str], target_categories: Optional[Set[str]]) -> float:
+    if count <= 0:
+        return 0.0
+    strategy = (strategy or "default").lower()
+    cat = (category or "").lower()
+    targets = {t.lower() for t in (target_categories or set()) if t}
+    if strategy == "keep_lands":
+        relevant = cat == "land" or "land" in targets
+        return float(count if relevant else min(count * 0.5, count))
+    if strategy == "keep_nonlands":
+        relevant = cat != "land"
+        return float(count if relevant else min(count * 0.5, count))
+    return float(min(count, 2))
+
+
+def _pick_choice_index(strategy: Optional[str], options: List[List[dict]]) -> int:
+    if not options:
+        return -1
+    strategy = (strategy or "").lower()
+    if strategy.startswith("prefer_draw"):
+        for idx, steps in enumerate(options):
+            if any(step.get("action") == "draw" for step in steps):
+                return idx
+    if strategy.startswith("prefer_mill"):
+        for idx, steps in enumerate(options):
+            if any(step.get("action") == "mill" for step in steps):
+                return idx
+    return 0
+
+
+def _apply_effect_actions(actions: List[dict], modifiers: EffectModifiers, category: Optional[str], target_categories: Optional[Set[str]]) -> None:
+    for action in actions or []:
+        if not isinstance(action, dict):
+            continue
+        kind = (action.get("action") or "").lower()
+        if kind == "draw":
+            modifiers.extra_draws += max(0, int(action.get("count", 1)))
+        elif kind == "mill":
+            modifiers.self_mill += max(0, int(action.get("count", 1)))
+        elif kind == "shuffle":
+            modifiers.shuffle = True
+        elif kind == "scry":
+            count = max(0, int(action.get("count", 1)))
+            strategy = action.get("strategy")
+            modifiers.extra_draws += _estimate_scry_draws(count, strategy, category, target_categories)
+        elif kind == "tutor":
+            target = (action.get("target") or "any").lower()
+            if target in ("any", "library"):
+                modifiers.tutor_any = True
+            else:
+                modifiers.tutor_categories.add(target)
+            if action.get("shuffle"):
+                modifiers.shuffle = True
+        elif kind == "topdeck_from_hand":
+            count = max(0, int(action.get("count", 1)))
+            modifiers.extra_draws = max(0.0, modifiers.extra_draws - min(count, modifiers.extra_draws))
+        elif kind == "sequence":
+            _apply_effect_actions(action.get("steps", []), modifiers, category, target_categories)
+        elif kind == "choice":
+            options = action.get("options", [])
+            idx = _pick_choice_index(action.get("strategy"), options)
+            if 0 <= idx < len(options):
+                _apply_effect_actions(options[idx], modifiers, category, target_categories)
+
+
+def aggregate_effect_modifiers(card_names: Optional[List[str]], category: Optional[str] = None, target_categories: Optional[List[str]] = None) -> EffectModifiers:
+    modifiers = EffectModifiers()
+    if not card_names:
+        return modifiers
+    catalog = _load_effects_catalog()
+    cat = (category or "").lower()
+    targets = {t.lower() for t in (target_categories or []) if t}
+    seen: Set[str] = set()
+    for name in card_names:
+        if not name:
+            continue
+        key = name.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        actions = catalog.get(key)
+        if not actions:
+            continue
+        _apply_effect_actions(actions, modifiers, cat, targets)
+    return modifiers
 
 class GameState:
     """Track deck composition with multiple card categories (lands, creatures, spells, etc.)."""
@@ -129,8 +243,8 @@ def _parse_draw_and_mill_effects(text: str) -> (int, int):
     if "target player draws a card" in text:
         extra_draws += 1
 
-    # Generic "draw <X> cards?" including "draw a card"
-    for m in re.finditer(r"draw (a|an|\d+|\w+) cards?", text):
+    # Generic "draw/draws <X> cards?" including "draw a card" / "draws two cards"
+    for m in re.finditer(r"draws? (a|an|\d+|\w+) cards?", text):
         token = m.group(1)
         if token in ("a", "an"):
             extra_draws += 1
@@ -223,7 +337,8 @@ def monte_carlo_probability_for_successes(total_cards: int,
                                           num_simulations: int = 10000,
                                           random_seed: Optional[int] = None,
                                           oracle_texts: Optional[List[str]] = None,
-                                          target_categories: Optional[List[str]] = None) -> dict:
+                                          target_categories: Optional[List[str]] = None,
+                                          oracle_card_names: Optional[List[str]] = None) -> dict:
     start_time = time.time()
     if random_seed is not None:
         random.seed(random_seed)
@@ -249,12 +364,23 @@ def monte_carlo_probability_for_successes(total_cards: int,
     extra_draws = 0
     self_mill = 0
     tutor_guarantee = False
-    if oracle_texts:
+
+    # 1) Prefer structured catalog actions when available for the named cards
+    modifiers = aggregate_effect_modifiers(oracle_card_names, target_categories=target_categories)
+    extra_draws += modifiers.extra_draws
+    self_mill += modifiers.self_mill
+    target_lower = {t.lower() for t in (target_categories or []) if t}
+    if modifiers.tutor_any or (target_lower and modifiers.tutor_categories.intersection(target_lower)):
+        tutor_guarantee = True
+
+    # 2) Fallback to simple oracle-text heuristics only if no structured actions exist
+    if (modifiers.extra_draws == 0 and modifiers.self_mill == 0
+            and not modifiers.tutor_any and not modifiers.tutor_categories
+            and oracle_texts):
         normalized_texts = " ".join(oracle_texts).lower()
         ed, sm = _parse_draw_and_mill_effects(normalized_texts)
         extra_draws += max(ed, 0)
         self_mill += max(sm, 0)
-        # Tutor handling (if target categories supplied, any matching tutor guarantees success)
         category_to_keyword = {
             "artifact": "search your library for an artifact card",
             "creature": "search your library for a creature card",
@@ -287,8 +413,8 @@ def monte_carlo_probability_for_successes(total_cards: int,
         }
 
     # Cap to feasible ranges
-    self_mill = min(self_mill, max(total_cards - 1, 0))
-    draws = min(1 + max(extra_draws, 0), total_cards)
+    self_mill = min(int(round(self_mill)), max(total_cards - 1, 0))
+    draws = min(1 + max(int(round(extra_draws)), 0), total_cards)
 
     hits = 0
     for _ in range(num_simulations):
@@ -340,7 +466,8 @@ def monte_carlo_probability(game_state: GameState,
                             category: str,
                             num_simulations: int = 10000,
                             random_seed: Optional[int] = None,
-                            oracle_texts: Optional[List[str]] = None) -> dict:
+                            oracle_texts: Optional[List[str]] = None,
+                            oracle_card_names: Optional[List[str]] = None) -> dict:
     """
     Monte Carlo simulation to predict probability of drawing a given category with support
     for multiple oracle effects (extra draws, milling, tutors).
@@ -371,7 +498,18 @@ def monte_carlo_probability(game_state: GameState,
     extra_draws = 0
     self_mill = 0
     tutor_guarantee = False
-    if oracle_texts:
+
+    # 1) Prefer structured catalog actions when oracle_card_names are provided
+    modifiers = aggregate_effect_modifiers(oracle_card_names, category=category)
+    extra_draws += modifiers.extra_draws
+    self_mill += modifiers.self_mill
+    if modifiers.tutor_any or (category and category.lower() in modifiers.tutor_categories):
+        tutor_guarantee = True
+
+    # 2) Fallback to simple oracle-text heuristics only if no structured actions exist
+    if (modifiers.extra_draws == 0 and modifiers.self_mill == 0
+            and not modifiers.tutor_any and not modifiers.tutor_categories
+            and oracle_texts):
         normalized_texts = " ".join(oracle_texts).lower()
         ed, sm = _parse_draw_and_mill_effects(normalized_texts)
         extra_draws += max(ed, 0)
@@ -407,8 +545,8 @@ def monte_carlo_probability(game_state: GameState,
         }
 
     # Cap ranges
-    self_mill = min(self_mill, max(total_cards - 1, 0))
-    draws = min(1 + max(extra_draws, 0), total_cards)
+    self_mill = min(int(round(self_mill)), max(total_cards - 1, 0))
+    draws = min(1 + max(int(round(extra_draws)), 0), total_cards)
 
     hits = 0
     for _ in range(num_simulations):
@@ -548,9 +686,25 @@ def monte_carlo_full_state(deck_counts: Dict[str, int],
 
     results: Dict[str, dict] = {}
     sims = float(num_simulations)
+
+    # Precompute helpers for deterministic overrides
+    top_first_name: Optional[str] = top_zone[0] if top_zone else None
+
     for name in names:
         p_now = hits_now[name] / sims if sims > 0 else 0.0
         p_next = hits_next[name] / sims if sims > 0 else 0.0
+
+        # Deterministic constraints for the current draw:
+        # - If a card name is exactly the first card in the known TOP zone, it will be drawn now.
+        # - If all remaining copies of a card are known to be in the BOTTOM zone, it cannot be drawn now.
+        if top_first_name is not None and name == str(top_first_name):
+            p_now = 1.0
+        else:
+            b_total = bottom_counts.get(name, 0)
+            t_total = top_counts.get(name, 0)
+            if b_total > 0 and t_total == 0 and b_total >= counts.get(name, 0):
+                p_now = 0.0
+
         results[name] = {
             "copies_total": counts[name],
             "p_now": p_now,

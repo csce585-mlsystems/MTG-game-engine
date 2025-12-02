@@ -3,8 +3,11 @@ import "./App.css";
 import { DeckProvider, useDeck } from "./DeckContext";
 import DeckPanel from "./components/DeckPanel";
 import Zones from "./components/Zones";
-import { DndContext } from "@dnd-kit/core";
+import { DndContext, DragOverlay, PointerSensor, useSensor, useSensors } from "@dnd-kit/core";
+import { snapCenterToCursor } from "@dnd-kit/modifiers";
+import CardItem from "./components/CardItem";
 import DeckUploadResolve from "./components/DeckUploadResolve.jsx";
+import ZoneCardModal from "./components/ZoneCardModal.jsx";
 
 function InnerApp() {
   const {
@@ -32,9 +35,29 @@ function InnerApp() {
     return null;
   }
 
+  const [activeDragCard, setActiveDragCard] = React.useState(null);
+  const [zoneModalCard, setZoneModalCard] = React.useState(null);
+
+  function getCardByDragId(id) {
+    let card = decklist.find(c => c.id === id);
+    if (card) return card;
+    const match = c => (c.instanceId || c.id) === id;
+    card = hand.find(match) || battlefield.find(match) || graveyard.find(match) || top.find(match) || bottom.find(match);
+    return card || null;
+  }
+
+  function handleDragStart(event) {
+    const id = event.active?.id;
+    if (!id) return;
+    const card = getCardByDragId(id);
+    if (card) setActiveDragCard(card);
+  }
+
   function handleDragEnd(event) {
     const activeId = event.active?.id;
     const overId = event.over?.id;
+
+    setActiveDragCard(null);
 
     if (!activeId || !overId) return;
 
@@ -55,8 +78,32 @@ function InnerApp() {
     }
   }
 
+  function handleDragCancel() {
+    setActiveDragCard(null);
+  }
+
+  function handleZoneCardDoubleClick(card) {
+    if (!card) return;
+    setZoneModalCard(card);
+  }
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, {
+      activationConstraint: {
+        delay: 100,
+        tolerance: 3
+      }
+    })
+  );
+
   return (
-    <DndContext onDragEnd={handleDragEnd}>
+    <DndContext
+      sensors={sensors}
+      onDragStart={handleDragStart}
+      onDragEnd={handleDragEnd}
+      onDragCancel={handleDragCancel}
+      modifiers={[snapCenterToCursor]}
+    >
       {decklist.length === 0 ? (
         <div style={{ padding: 24 }}>
           <DeckUploadResolve />
@@ -71,12 +118,37 @@ function InnerApp() {
           }}
         >
           <div>
-            <Zones />
+            <Zones
+              activeDragId={activeDragCard ? (activeDragCard.instanceId || activeDragCard.id) : null}
+              onCardDoubleClick={handleZoneCardDoubleClick}
+            />
           </div>
           <aside>
-            <DeckPanel />
+            <DeckPanel activeDragId={activeDragCard ? (activeDragCard.instanceId || activeDragCard.id) : null} />
           </aside>
         </div>
+      )}
+      <DragOverlay zIndex={3000}>
+        {activeDragCard ? (
+          <div
+            style={{
+              width: 150,
+              pointerEvents: "none",
+              transform: "scale(1.12)",
+              transformOrigin: "center center",
+              filter: "drop-shadow(0 6px 16px rgba(0,0,0,0.5))"
+            }}
+          >
+            <CardItem card={activeDragCard} viewMode="zone" />
+          </div>
+        ) : null}
+      </DragOverlay>
+
+      {zoneModalCard && (
+        <ZoneCardModal
+          card={zoneModalCard}
+          onClose={() => setZoneModalCard(null)}
+        />
       )}
     </DndContext>
   );

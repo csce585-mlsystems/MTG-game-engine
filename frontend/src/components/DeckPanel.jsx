@@ -1,47 +1,11 @@
 import React, { useState } from "react";
 import { useDeck } from "../DeckContext";
-import CardItem from "./CardItem";
-import { useDraggable, useDroppable } from "@dnd-kit/core";
+import { useDroppable } from "@dnd-kit/core";
 import CardModal from "./CardModal";
 import "./DeckPanel.css";
+import DraggableCard from "./DraggableCard";
 
-function DraggableCard({
-    card,
-    probability,
-    onDoubleClick,
-    onStarClick,
-    starred,
-    viewMode
-}) {
-    const dragId = card.id;
-    const { attributes, listeners, setNodeRef, transform } = useDraggable({ id: dragId });
-
-    return (
-        <div
-            ref={setNodeRef}
-            {...listeners}
-            {...attributes}
-            style={{
-                transform: transform
-                    ? `translate3d(${transform.x}px, ${transform.y}px, 0)`
-                    : undefined,
-                cursor: "grab"
-            }}
-        >
-            <CardItem
-                card={card}
-                probability={probability}
-                onDoubleClick={onDoubleClick}
-                onStarClick={onStarClick}
-                starred={starred}
-                count={card.count}
-                viewMode={viewMode}
-            />
-        </div>
-    );
-}
-
-export default function DeckPanel() {
+export default function DeckPanel({ activeDragId = null }) {
     const {
         sortedDeckView,
         toggleFavorite,
@@ -49,7 +13,9 @@ export default function DeckPanel() {
         runSimForState,
         loading,
         probabilities,
-        favorites
+        favorites,
+        applyZoneEffects,
+        setApplyZoneEffects
     } = useDeck();
 
     const [modalCard, setModalCard] = useState(null);
@@ -77,31 +43,40 @@ export default function DeckPanel() {
                 <button className="toggle-btn" onClick={toggleView}>
                     {viewMode === "list" ? "Grid View" : "List View"}
                 </button>
+
+                <label style={{ display: "flex", alignItems: "center", gap: 6, marginLeft: 8, fontSize: 12 }} title="Include oracle effects from cards currently in zones (hand, battlefield, graveyard, top/bottom)">
+                    <input
+                        type="checkbox"
+                        checked={!!applyZoneEffects}
+                        onChange={(e) => setApplyZoneEffects(e.target.checked)}
+                    />
+                    Include zone effects
+                </label>
             </div>
 
-            {probabilities?.lastResp && (
-                <div className="deck-summary">
-                    <div className="summary-title">Last Simulation</div>
-
-                    <div className="summary-grid">
-                        <div>
-                            Category: <strong>{probabilities.lastResp.category}</strong>
-                        </div>
-                        <div>
-                            Probability:{" "}
-                            <strong>
-                                {(probabilities.lastResp.probability * 100).toFixed(2)}%
-                            </strong>
-                        </div>
-                        <div>
-                            Hits: <strong>{probabilities.lastResp.hits}</strong>
-                        </div>
-                        <div>
-                            Runs: <strong>{probabilities.lastResp.simulations_run}</strong>
+            {probabilities?.lastResp && (() => {
+                const cat = String(probabilities.lastResp.category || "").toLowerCase();
+                const needsArticle = cat && !["specific_cards"].includes(cat);
+                const article = /^[aeiou]/.test(cat) ? "an" : "a";
+                const title = needsArticle ? `Chance to draw ${article} ${cat}` : "Draw probability";
+                const pct = (probabilities.lastResp.probability * 100).toFixed(2);
+                return (
+                    <div className="deck-summary">
+                        <div className="summary-title">{title}</div>
+                        <div className="summary-grid">
+                            <div>
+                                Probability: <strong>{pct}%</strong>
+                            </div>
+                            <div>
+                                Hits: <strong>{probabilities.lastResp.hits}</strong>
+                            </div>
+                            <div>
+                                Runs: <strong>{probabilities.lastResp.simulations_run}</strong>
+                            </div>
                         </div>
                     </div>
-                </div>
-            )}
+                );
+            })()}
 
             <div
                 ref={setDeckDroppableRef}
@@ -122,6 +97,7 @@ export default function DeckPanel() {
                             starred={starred}
                             probability={probability}
                             viewMode={viewMode}
+                            activeDragId={activeDragId}
                         />
                     );
                 })}

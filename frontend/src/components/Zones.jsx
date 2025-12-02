@@ -4,18 +4,34 @@ import { useDroppable } from "@dnd-kit/core";
 import DraggableCard from "./DraggableCard";
 import "./Zones.css";
 
-function DroppableZone({ zoneId, title, cards }) {
+function DroppableZone({
+    zoneId,
+    title,
+    cards,
+    variant,
+    activeDragId = null,
+    onClear,
+    isEffectEnabled,
+    onToggleEffect,
+    onCardDoubleClick,
+}) {
     const { setNodeRef, isOver } = useDroppable({ id: zoneId });
 
     return (
         <div
             ref={setNodeRef}
-            className="zone-box"
-            style={{
-                background: isOver ? "rgba(255,255,255,0.12)" : "rgba(255,255,255,0.15)"
-            }}
+            className={`zone-box ${variant || ""} ${isOver ? "over" : ""}`}
         >
-            <div className="zone-title">{title}</div>
+            <div className="zone-header">
+                <div className="zone-title">{title}</div>
+                <div className="zone-actions">
+                    {cards.length > 0 && onClear && (
+                        <button className="zone-clear-btn" onClick={() => onClear(zoneId)}>
+                            Clear all
+                        </button>
+                    )}
+                </div>
+            </div>
 
             <div className="zone-cards">
                 {cards.map(card => (
@@ -24,7 +40,11 @@ function DroppableZone({ zoneId, title, cards }) {
                         card={card}
                         probability={null}
                         starred={false}
-                        viewMode="grid"
+                        viewMode="zone"
+                        activeDragId={activeDragId}
+                        effectEnabled={isEffectEnabled ? isEffectEnabled(card) : false}
+                        onEffectToggle={onToggleEffect ? () => onToggleEffect(card) : undefined}
+                        onDoubleClick={onCardDoubleClick}
                     />
                 ))}
             </div>
@@ -32,13 +52,16 @@ function DroppableZone({ zoneId, title, cards }) {
     );
 }
 
-export default function Zones() {
+export default function Zones({ activeDragId = null, onCardDoubleClick = null }) {
     const {
         hand,
         battlefield,
         graveyard,
         top,
-        bottom
+        bottom,
+        clearZone,
+        zoneEffectIds,
+        toggleZoneEffect
     } = useDeck();
 
     return (
@@ -47,18 +70,36 @@ export default function Zones() {
                 zoneId="graveyard"
                 title="Graveyard"
                 cards={graveyard}
+                variant="graveyard"
+                activeDragId={activeDragId}
+                onClear={clearZone}
+                isEffectEnabled={(c) => !!(c?.instanceId && zoneEffectIds.has(c.instanceId))}
+                onToggleEffect={(c) => c?.instanceId && toggleZoneEffect(c.instanceId)}
+                    onCardDoubleClick={onCardDoubleClick}
             />
 
             <DroppableZone
                 zoneId="battlefield"
                 title="Battlefield"
                 cards={battlefield}
+                variant="battlefield"
+                activeDragId={activeDragId}
+                onClear={clearZone}
+                isEffectEnabled={(c) => !!(c?.instanceId && zoneEffectIds.has(c.instanceId))}
+                onToggleEffect={(c) => c?.instanceId && toggleZoneEffect(c.instanceId)}
+                    onCardDoubleClick={onCardDoubleClick}
             />
 
             <DroppableZone
                 zoneId="hand"
                 title="Hand"
                 cards={hand}
+                variant="hand"
+                activeDragId={activeDragId}
+                onClear={clearZone}
+                isEffectEnabled={(c) => !!(c?.instanceId && zoneEffectIds.has(c.instanceId))}
+                onToggleEffect={(c) => c?.instanceId && toggleZoneEffect(c.instanceId)}
+                    onCardDoubleClick={onCardDoubleClick}
             />
 
             <div className="middle-zones">
@@ -66,15 +107,29 @@ export default function Zones() {
                     zoneId="bottom"
                     title="Bottom of Library"
                     cards={bottom}
+                    variant="bottom"
+                    activeDragId={activeDragId}
+                    onClear={clearZone}
+                    isEffectEnabled={(c) => !!(c?.instanceId && zoneEffectIds.has(c.instanceId))}
+                    onToggleEffect={(c) => c?.instanceId && toggleZoneEffect(c.instanceId)}
+                    onCardDoubleClick={onCardDoubleClick}
                 />
-                <div className="deck-placeholder">
-                    DECK
-                    <small>Unknown</small>
+                <div className="deck-placeholder" title="Deck">
+                    <div className="deck-badge" aria-label="DECK Unknown">
+                        <span className="deck-word">DECK</span>
+                        <span className="unknown-word">Unknown</span>
+                    </div>
                 </div>
                 <DroppableZone
                     zoneId="top"
                     title="Top of Library"
                     cards={top}
+                    variant="top"
+                    activeDragId={activeDragId}
+                    onClear={clearZone}
+                    isEffectEnabled={(c) => !!(c?.instanceId && zoneEffectIds.has(c.instanceId))}
+                    onToggleEffect={(c) => c?.instanceId && toggleZoneEffect(c.instanceId)}
+                    onCardDoubleClick={onCardDoubleClick}
                 />
             </div>
         </div>

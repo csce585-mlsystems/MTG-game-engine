@@ -1,6 +1,6 @@
 .deck-panel {
     padding: 10px;
-    color: #eee;
+    color: #f2f2f2;
     height: 100%;
     display: flex;
     flex-direction: column;
@@ -10,6 +10,12 @@
     display: flex;
     justify-content: space-between;
     align-items: center;
+    background: #0f1216;
+    color: #f2f2f2;
+    border: 1px solid #2d3238;
+    border-radius: 6px;
+    padding: 6px 8px;
+    margin-bottom: 8px;
 }
 
 .toggle-btn {
@@ -29,9 +35,9 @@
 .deck-summary {
     margin: 10px 0;
     padding: 8px;
-    background: #0f0f0f;
+    background: #0d0f12;
     border-radius: 6px;
-    border: 1px solid #333;
+    border: 1px solid #2d3238;
 }
 
 .summary-title {
@@ -80,14 +86,14 @@
 }
 
 .deck-list-view>div .card-item .overlay {
-    background: linear-gradient(180deg, rgba(0, 0, 0, 0.1) 0%, rgba(0, 0, 0, 0.7) 90%);
+    background: linear-gradient(180deg, rgba(0, 0, 0, 0.18) 0%, rgba(0, 0, 0, 0.8) 90%);
 }
 
 /* GRID VIEW (original visual layout) */
 
 .deck-grid-view {
     display: grid;
-    grid-template-columns: repeat(3, minmax(100px, 1fr));
-    gap: 8px;
+    grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+    gap: 12px;
     overflow-y: auto;
 }

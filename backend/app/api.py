@@ -132,19 +132,22 @@ async def simulate_by_names(request: SimulationByNamesRequest):
 
     # Collect oracle texts for selected names (if provided)
     oracle_texts = None
+    oracle_card_names = None
     if request.oracle_names:
         lower = {n.lower() for n in request.oracle_names}
         oracle_texts = [
             rc.card.oracle_text for rc in resolved.resolved
             if rc.card.name and rc.card.name.lower() in lower and rc.card.oracle_text
         ]
+        oracle_card_names = request.oracle_names
 
     result = monte_carlo_probability(
         game_state=game_state,
         category=request.category,
         num_simulations=request.num_simulations,
         random_seed=request.random_seed,
-        oracle_texts=oracle_texts
+        oracle_texts=oracle_texts,
+        oracle_card_names=oracle_card_names
     )
     return SimulationResponse(**result)
 
@@ -163,12 +166,14 @@ async def simulate_by_card(request: SimulationByCardRequest):
 
     # Collect oracle texts for selected names (if provided)
     oracle_texts = None
+    oracle_card_names = None
     if request.oracle_names:
         lower = {n.lower() for n in request.oracle_names}
         oracle_texts = [
             rc.card.oracle_text for rc in resolved.resolved
             if rc.card.name and rc.card.name.lower() in lower and rc.card.oracle_text
         ]
+        oracle_card_names = request.oracle_names
 
     result = monte_carlo_probability_for_successes(
         total_cards=total_cards,
@@ -176,7 +181,8 @@ async def simulate_by_card(request: SimulationByCardRequest):
         num_simulations=request.num_simulations,
         random_seed=request.random_seed,
         oracle_texts=oracle_texts,
-        target_categories=target_categories
+        target_categories=target_categories,
+        oracle_card_names=oracle_card_names
     )
 
     # Adapt to SimulationResponse schema

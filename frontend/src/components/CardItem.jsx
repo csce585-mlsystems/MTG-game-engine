@@ -8,7 +8,9 @@ export default function CardItem({
     onStarClick,
     starred = false,
     count = null,
-    viewMode = "grid" // "grid" | "list" | "zone"
+    viewMode = "grid", // "grid" | "list" | "zone"
+    effectEnabled = false,
+    onEffectToggle
 }) {
     const imgFull =
         card.image_uris?.normal ||
@@ -27,6 +29,14 @@ export default function CardItem({
             {viewMode === "zone" && (
                 <>
                     <img src={imgFull} alt={card.name} className="zone-img" />
+                    <button
+                        className={`effect-toggle ${effectEnabled ? "active" : ""}`}
+                        title={effectEnabled ? "Included in zone effects" : "Include in zone effects"}
+                        onPointerDown={(e) => { e.stopPropagation(); e.preventDefault(); }}
+                        onClick={(e) => { e.stopPropagation(); onEffectToggle?.(card); }}
+                    >
+                        fx
+                    </button>
                 </>
             )}
 
@@ -37,7 +47,7 @@ export default function CardItem({
                     style={{ backgroundImage: `url(${imgArt})` }}
                 >
                     <div className="list-name">
-                        {count !== null && count > 1 && (
+                        {count !== null && count > 0 && (
                             <span className="list-count">{count}</span>
                         )}
                         {card.name}
@@ -53,6 +63,11 @@ export default function CardItem({
             {viewMode === "grid" && (
                 <>
                     <img src={imgFull} alt={card.name} className="grid-img" />
+                    {count !== null && count > 0 && (
+                        <div className="grid-count" title={`${count} copies remaining`}>
+                            {count}
+                        </div>
+                    )}
                     {probability !== null && (
                         <div className="prob-overlay">
                             {(probability * 100).toFixed(2)}%
