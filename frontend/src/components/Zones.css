@@ -1,0 +1,60 @@
+.zones-layout {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    padding: 10px;
+    width: 100%;
+}
+
+
+.middle-zones {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 14px;
+}
+
+.zone-box {
+    border: 2px dashed rgba(255, 255, 255, 0.25);
+    padding: 10px;
+    border-radius: 8px;
+    min-height: 160px;
+    position: relative;
+}
+
+.zone-title {
+    font-weight: 700;
+    margin-bottom: 6px;
+    color: #fff;
+    text-shadow: 0 1px 2px black;
+    font-size: 15px;
+}
+
+.zone-cards {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.deck-placeholder {
+    width: 170px;
+    height: 150px;
+    border-radius: 10px;
+    background: linear-gradient(135deg, #222, #444);
+    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.4);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #ccc;
+    font-size: 22px;
+    font-weight: 700;
+    text-align: center;
+    user-select: none;
+}
+
+.deck-placeholder small {
+    display: block;
+    font-size: 12px;
+    margin-top: -4px;
+    opacity: 0.7;
+}

@@ -1,39 +1,77 @@
 import React from "react";
 import "./CardItem.css";
 
-export default function CardItem({ card, probability = null, onDoubleClick, onStarClick, dragAttributes = {}, dragging = false, starred = false, count = null }) {
-    const imgUrl = card.image_uris && (card.image_uris.small || card.image_uris.normal || card.image_uris.large);
+export default function CardItem({
+    card,
+    probability = null,
+    onDoubleClick,
+    onStarClick,
+    starred = false,
+    count = null,
+    viewMode = "grid" // "grid" | "list" | "zone"
+}) {
+    const imgFull =
+        card.image_uris?.normal ||
+        card.image_uris?.large ||
+        card.image_uris?.small;
+
+    const imgArt = card.image_uris?.art_crop || imgFull;
 
     return (
         <div
-            className="card-item"
+            className={`card-item ${viewMode}`}
             onDoubleClick={() => onDoubleClick?.(card)}
-            style={{ opacity: dragging ? 0.6 : 1 }}
-            {...dragAttributes}
         >
-            {imgUrl ? (
-                <img src={imgUrl} alt={card.name} />
-            ) : (
-                <div style={{ width: "100%", height: "100%", background: "#222" }} />
+
+            {/* ZONE MODE (mini–card like old LittleCard) */}
+            {viewMode === "zone" && (
+                <>
+                    <img src={imgFull} alt={card.name} className="zone-img" />
+                </>
             )}
-            <div className="overlay">
-                <div className="title">{card.name}</div>
-                {probability !== null && <div className="prob">{(probability * 100).toFixed(2)}%</div>}
-            </div>
-            {typeof count === "number" && count > 1 && (
-                <div className="card-count" title={`${count} copies remaining`}>{count}</div>
+
+            {/* LIST MODE (wide art_crop banner) */}
+            {viewMode === "list" && (
+                <div
+                    className="list-art"
+                    style={{ backgroundImage: `url(${imgArt})` }}
+                >
+                    <div className="list-name">
+                        {count !== null && count > 1 && (
+                            <span className="list-count">{count}</span>
+                        )}
+                        {card.name}
+                        {probability !== null && (
+                            <span className="list-prob">
+                                {(probability * 100).toFixed(2)}%
+                            </span>
+                        )}
+                    </div>
+                </div>
             )}
-            <button
-                className={`card-star${starred ? " active" : ""}`}
-                onPointerDown={(e) => { e.stopPropagation(); e.preventDefault(); }}
-                onMouseDown={(e) => { e.stopPropagation(); e.preventDefault(); }}
-                onTouchStart={(e) => { e.stopPropagation(); e.preventDefault(); }}
-                onClick={(e) => { e.stopPropagation(); onStarClick?.(card); }}
-                title="Favorite"
-                type="button"
-            >
-                ★
-            </button>
+
+            {viewMode === "grid" && (
+                <>
+                    <img src={imgFull} alt={card.name} className="grid-img" />
+                    {probability !== null && (
+                        <div className="prob-overlay">
+                            {(probability * 100).toFixed(2)}%
+                        </div>
+                    )}
+                </>
+            )}
+
+            {viewMode !== "zone" && (
+                <button
+                    className={`card-star ${starred ? "active" : ""}`}
+                    onClick={(e) => {
+                        e.stopPropagation();
+                        onStarClick?.(card);
+                    }}
+                >
+                    ★
+                </button>
+            )}
         </div>
     );
 }

@@ -28,6 +28,10 @@ export async function simulateByCard(payload) {
   return postJson("/simulate/by-card", payload);
 }
 
+export async function simulateFromState(payload) {
+  return postJson("/simulate/from-state", payload);
+}
+
 // Optional helpers for other UI panels
 export async function cardSearch(payload) {
   return postJson("/cards", payload);

@@ -1,56 +1,82 @@
 import React from "react";
 import { useDeck } from "../DeckContext";
-import CardItem from "./CardItem";
-import { useDraggable, useDroppable } from "@dnd-kit/core";
+import { useDroppable } from "@dnd-kit/core";
+import DraggableCard from "./DraggableCard";
+import "./Zones.css";
 
-function DraggableCard({ card }) {
-    const dragId = card.instanceId || card.id;
-    const { attributes, listeners, setNodeRef, transform } = useDraggable({ id: dragId });
+function DroppableZone({ zoneId, title, cards }) {
+    const { setNodeRef, isOver } = useDroppable({ id: zoneId });
+
     return (
         <div
             ref={setNodeRef}
-            {...listeners}
-            {...attributes}
+            className="zone-box"
             style={{
-                transform: transform ? `translate3d(${transform.x}px,${transform.y}px,0)` : undefined,
-                cursor: "grab"
+                background: isOver ? "rgba(255,255,255,0.12)" : "rgba(255,255,255,0.15)"
             }}
         >
-            <CardItem card={card} />
-        </div>
-    );
-}
+            <div className="zone-title">{title}</div>
 
-function DroppableZone({ zoneId, title, cards, onDrop }) {
-    const { isOver, setNodeRef } = useDroppable({ id: zoneId });
-    return (
-        <div
-            ref={setNodeRef}
-            style={{
-                minHeight: 180,
-                border: isOver ? "2px solid #3182ce" : "2px dashed #999",
-                padding: 8,
-                background: isOver ? "rgba(49,130,206,0.08)" : "transparent",
-                borderRadius: 8,
-                transition: "border-color 120ms ease, background 120ms ease"
-            }}
-        >
-            <h4>{title}</h4>
-            <div className="zone-grid">
-                {cards.map(c => <DraggableCard key={c.instanceId || c.id} card={c} />)}
+            <div className="zone-cards">
+                {cards.map(card => (
+                    <DraggableCard
+                        key={card.instanceId || card.id}
+                        card={card}
+                        probability={null}
+                        starred={false}
+                        viewMode="grid"
+                    />
+                ))}
             </div>
         </div>
     );
 }
 
 export default function Zones() {
-    const { hand, battlefield, graveyard } = useDeck();
+    const {
+        hand,
+        battlefield,
+        graveyard,
+        top,
+        bottom
+    } = useDeck();
 
     return (
-        <div style={{ display: "grid", gap: 12 }}>
-            <DroppableZone zoneId="hand" title="Hand" cards={hand} />
-            <DroppableZone zoneId="battlefield" title="Battlefield" cards={battlefield} />
-            <DroppableZone zoneId="graveyard" title="Graveyard" cards={graveyard} />
+        <div className="zones-layout">
+            <DroppableZone
+                zoneId="graveyard"
+                title="Graveyard"
+                cards={graveyard}
+            />
+
+            <DroppableZone
+                zoneId="battlefield"
+                title="Battlefield"
+                cards={battlefield}
+            />
+
+            <DroppableZone
+                zoneId="hand"
+                title="Hand"
+                cards={hand}
+            />
+
+            <div className="middle-zones">
+                <DroppableZone
+                    zoneId="bottom"
+                    title="Bottom of Library"
+                    cards={bottom}
+                />
+                <div className="deck-placeholder">
+                    DECK
+                    <small>Unknown</small>
+                </div>
+                <DroppableZone
+                    zoneId="top"
+                    title="Top of Library"
+                    cards={top}
+                />
+            </div>
         </div>
     );
 }

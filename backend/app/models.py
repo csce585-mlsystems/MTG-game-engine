@@ -224,5 +224,55 @@ class CardNamesRequest(BaseModel):
     """Request body to fetch cards by exact names (case-insensitive). No pagination."""
     names: List[str] = Field(min_items=1, description="List of card names to fetch")
 
+class FullStateSimulationCardResult(BaseModel):
+    """Per-card probability result for full-state simulation."""
+    name: str = Field(description="Card name")
+    copies_total: int = Field(description="Total copies of this card remaining in the library")
+    p_now: float = Field(description="Simulated probability of drawing this card on the current draw")
+    p_next: float = Field(description="Simulated probability of drawing this card on the next draw (one turn after)")
+
+
+class FullStateSimulationRequest(BaseModel):
+    """
+    Full-state simulation request.
+
+    The deck here represents the current library only:
+    - counts are remaining copies in library (hand/graveyard/battlefield already removed)
+    - Top/Bottom zones are known positions within that library and do NOT change counts
+    """
+    deck: List[DeckNameCount] = Field(
+        description="Remaining library as a list of {name, count} entries"
+    )
+    top_zone: List[str] = Field(
+        default_factory=list,
+        description="Ordered list of card names from TOP downwards (index 0 is the current top of library)"
+    )
+    bottom_zone: List[str] = Field(
+        default_factory=list,
+        description=(
+            "Ordered list of card names in the BOTTOM zone, "
+            "with index 0 being the deepest bottom card and the last element being closest to the unknown middle."
+        )
+    )
+    num_simulations: int = Field(
+        default=20000,
+        ge=100,
+        le=1000000,
+        description="Number of Monte Carlo simulations to run"
+    )
+    random_seed: Optional[int] = Field(
+        default=None,
+        description="Optional seed for reproducible runs"
+    )
+
+
+class FullStateSimulationResponse(BaseModel):
+    """Response for full-state per-card probability simulation."""
+    total_cards: int = Field(description="Total cards in the library (including top + unknown + bottom)")
+    num_simulations: int = Field(description="Number of simulations executed")
+    execution_time_seconds: float = Field(description="Wall-clock time to run the simulation")
+    results: List[FullStateSimulationCardResult] = Field(
+        description="Per-card probability results for this-turn and next-turn draws"
+    )
 
 

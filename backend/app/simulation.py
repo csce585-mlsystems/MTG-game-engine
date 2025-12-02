@@ -457,3 +457,109 @@ def monte_carlo_probability(game_state: GameState,
         'game_state': str(game_state),
         'category': category
     }
+def monte_carlo_full_state(deck_counts: Dict[str, int],
+                           top_zone: List[str],
+                           bottom_zone: List[str],
+                           num_simulations: int = 20000,
+                           random_seed: Optional[int] = None) -> dict:
+    """
+    Full-state Monte Carlo simulation that returns per-card probabilities:
+    - drawing each card on the current draw (p_now)
+    - drawing each card on the next draw (p_next)
+    """
+    start_time = time.time()
+
+    if random_seed is not None:
+        random.seed(random_seed)
+
+    # Normalize deck_counts: only keep positive counts and cast to int
+    counts: Dict[str, int] = {}
+    for name, cnt in deck_counts.items():
+        c = int(cnt)
+        if c > 0:
+            counts[str(name)] = c
+
+    if not counts or num_simulations <= 0:
+        return {
+            "total_cards": 0,
+            "num_simulations": max(int(num_simulations), 0),
+            "execution_time_seconds": 0.0,
+            "results": {},
+        }
+
+    # Count how many card copies are in the known TOP and BOTTOM zones
+    top_counts: Dict[str, int] = {}
+    for n in top_zone:
+        key = str(n)
+        top_counts[key] = top_counts.get(key, 0) + 1
+
+    bottom_counts: Dict[str, int] = {}
+    for n in bottom_zone:
+        key = str(n)
+        bottom_counts[key] = bottom_counts.get(key, 0) + 1
+
+    unknown_counts: Dict[str, int] = {}
+    for name, total in counts.items():
+        t = top_counts.get(name, 0)
+        b = bottom_counts.get(name, 0)
+        remaining = total - t - b
+        if remaining < 0:
+            raise ValueError(
+                f"Inconsistent counts for '{name}': total={total}, "
+                f"top_zone={t}, bottom_zone={b}"
+            )
+        if remaining > 0:
+            unknown_counts[name] = remaining
+
+    # Build the base unknown card pool
+    unknown_pool_base: List[str] = []
+    for name, cnt in unknown_counts.items():
+        unknown_pool_base.extend([name] * cnt)
+
+    total_cards = len(top_zone) + len(unknown_pool_base) + len(bottom_zone)
+
+    names = list(counts.keys())
+    hits_now = {name: 0 for name in names}
+    hits_next = {name: 0 for name in names}
+
+    for _ in range(num_simulations):
+        # Shuffle a copy of the unknown pool
+        unknown_pool = unknown_pool_base.copy()
+        if len(unknown_pool) > 1:
+            random.shuffle(unknown_pool)
+
+        deck_seq: List[str] = list(top_zone) + unknown_pool + list(reversed(bottom_zone))
+
+        if not deck_seq:
+            continue
+
+        # Current draw
+        first = deck_seq[0]
+        if first in hits_now:
+            hits_now[first] += 1
+
+        # Next draw
+        if len(deck_seq) > 1:
+            second = deck_seq[1]
+            if second in hits_next:
+                hits_next[second] += 1
+
+    elapsed = time.time() - start_time
+
+    results: Dict[str, dict] = {}
+    sims = float(num_simulations)
+    for name in names:
+        p_now = hits_now[name] / sims if sims > 0 else 0.0
+        p_next = hits_next[name] / sims if sims > 0 else 0.0
+        results[name] = {
+            "copies_total": counts[name],
+            "p_now": p_now,
+            "p_next": p_next,
+        }
+
+    return {
+        "total_cards": total_cards,
+        "num_simulations": num_simulations,
+        "execution_time_seconds": elapsed,
+        "results": results,
+    }

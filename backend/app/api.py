@@ -4,10 +4,25 @@ FastAPI endpoints for MTG land simulation
 from fastapi import FastAPI, HTTPException, Request, Response, Query #Added Response, Query
 import time
 import logging
-from typing import Optional, List
+from typing import Optional, List, Dict
 
-from .models import SimulationRequest, SimulationResponse, HealthResponse, CardListResponse, CardSearchRequest, CardNamesRequest, CardBase, ResolveDeckRequest, ResolveDeckResponse, SimulationByNamesRequest, SimulationByCardRequest
-from .simulation import GameState, monte_carlo_probability, monte_carlo_probability_for_successes
+from .models import (
+    SimulationRequest,
+    SimulationResponse,
+    HealthResponse,
+    CardListResponse,
+    CardSearchRequest,
+    CardNamesRequest,
+    CardBase,
+    ResolveDeckRequest,
+    ResolveDeckResponse,
+    SimulationByNamesRequest,
+    SimulationByCardRequest,
+    FullStateSimulationRequest,
+    FullStateSimulationResponse,
+    FullStateSimulationCardResult,
+)
+from .simulation import GameState, monte_carlo_probability, monte_carlo_probability_for_successes, monte_carlo_full_state
 from datetime import datetime #Added Datetime
 from .repository import run_db, count_cards, query_cards, get_cards_by_names, DB_PATH
 from .deck_service import resolve_deck
@@ -170,6 +185,45 @@ async def simulate_by_card(request: SimulationByCardRequest):
         'category': 'specific_cards'
     })
     return SimulationResponse(**result)
+
+@app.post("/simulate/full-state", response_model=FullStateSimulationResponse)
+async def simulate_full_state_endpoint(request: FullStateSimulationRequest):
+
+    deck_counts: Dict[str, int] = {}
+    for entry in request.deck:
+        if entry.count and entry.count > 0:
+            key = entry.name
+            deck_counts[key] = deck_counts.get(key, 0) + entry.count
+
+    try:
+        sim_result = monte_carlo_full_state(
+            deck_counts=deck_counts,
+            top_zone=request.top_zone,
+            bottom_zone=request.bottom_zone,
+            num_simulations=request.num_simulations,
+            random_seed=request.random_seed,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    # Convert into typed Pydantic models
+    card_results = []
+    for name, payload in sim_result["results"].items():
+        card_results.append(
+            FullStateSimulationCardResult(
+                name=name,
+                copies_total=payload["copies_total"],
+                p_now=payload["p_now"],
+                p_next=payload["p_next"],
+            )
+        )
+
+    return FullStateSimulationResponse(
+        total_cards=sim_result["total_cards"],
+        num_simulations=sim_result["num_simulations"],
+        execution_time_seconds=sim_result["execution_time_seconds"],
+        results=card_results,
+    )
 
 @app.post("/simulate", response_model=SimulationResponse)
 async def simulate_card_probability(request: SimulationRequest):
