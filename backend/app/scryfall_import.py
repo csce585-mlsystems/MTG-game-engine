@@ -43,6 +43,9 @@ CREATE TABLE IF NOT EXISTS cards (
 );
 CREATE INDEX IF NOT EXISTS idx_cards_name ON cards(name);
 CREATE INDEX IF NOT EXISTS idx_cards_oracle ON cards(oracle_id);
+CREATE INDEX IF NOT EXISTS idx_cards_name_nocase ON cards(name COLLATE NOCASE);
+CREATE INDEX IF NOT EXISTS idx_cards_set_code_nocase ON cards(set_code COLLATE NOCASE);
+CREATE INDEX IF NOT EXISTS idx_cards_rarity_nocase ON cards(rarity COLLATE NOCASE);
 """
 
 def get_bulk_download_url(kind="default_cards"):

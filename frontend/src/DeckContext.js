@@ -49,9 +49,10 @@ export function DeckProvider({ children }) {
     const sortedDeckView = useMemo(() => {
 
         // utilizing buckets to order remaining cards with favorites at the top
-        const favs = decklist.filter(c => favorites.has(c.id)).sort(alphabetical);
+        const visible = decklist.filter(c => (c.count || 0) > 0);
+        const favs = visible.filter(c => favorites.has(c.id)).sort(alphabetical);
 
-        const nonFav = decklist.filter(c => !favorites.has(c.id));
+        const nonFav = visible.filter(c => !favorites.has(c.id));
         const lands = nonFav.filter(c => bucketFor(c) === "lands").sort(alphabetical);
         const creatures = nonFav.filter(c => bucketFor(c) === "creatures").sort(alphabetical);
         const planeswalkers = nonFav.filter(c => bucketFor(c) === "planeswalkers").sort(alphabetical);
@@ -81,8 +82,10 @@ export function DeckProvider({ children }) {
         // backend ResolveDeck expects [{name, count}] , aggregate by name
         const map = new Map();
         for (const c of list) {
+            const copies = Number(c.count ?? 1);
+            if (copies <= 0) continue;
             const key = c.name;
-            map.set(key, (map.get(key) || 0) + (c.count || 1));
+            map.set(key, (map.get(key) || 0) + copies);
         }
         const arr = [];
         for (const [name, count] of map.entries()) arr.push({ name, count });
@@ -112,14 +115,14 @@ export function DeckProvider({ children }) {
     }
 
     // run simulation for current deck (or provided deck)
-    async function runSimForState(currentDeck = null, category = "land") {
+    async function runSimForState(currentDeck = null, category = "land", oracleNames = undefined) {
         setLoading(true);
         try {
             const deckToUse = currentDeck || decklist;
             // convert deck to resolve format [{name,count}]
             const payloadDeck = deckPayloadFromList(deckToUse);
             // call simulate/by-names — returns SimulationResponse
-            const resp = await simulateByNames({ deck: payloadDeck, category, num_simulations: 20000 });
+            const resp = await simulateByNames({ deck: payloadDeck, category, num_simulations: 20000, oracle_names: oracleNames });
             setProbabilities(prev => ({ ...prev, _categoryProb: resp.probability, lastResp: resp }));
             return resp;
         } catch (e) {
@@ -131,13 +134,13 @@ export function DeckProvider({ children }) {
     }
 
     // run simulation for a specific card (on double-click) - calls /simulate/by-card
-    async function runSimForCard(card) {
+    async function runSimForCard(card, oracleNames = undefined) {
         setLoading(true);
         try {
             // Build deck payload
             const payloadDeck = deckPayloadFromList(decklist);
             // resp contains probability for target_names union, to display the before-after probability comparison
-            const resp = await simulateByCard({ deck: payloadDeck, target_names: [card.name], num_simulations: 20000 });
+            const resp = await simulateByCard({ deck: payloadDeck, target_names: [card.name], num_simulations: 20000, oracle_names: oracleNames });
             return resp;
         } catch (e) {
             console.error("runSimForCard failed", e);
@@ -159,8 +162,8 @@ export function DeckProvider({ children }) {
     // moveCard: move a card object from its current zone into the target zone
     function moveCard({ cardId, fromZone, toZone }) {
         // helper for removal
-        const popFrom = (arr, id) => {
-            const idx = arr.findIndex(c => c.id === id);
+        const popFrom = (arr, matchId) => {
+            const idx = arr.findIndex(c => (c.instanceId || c.id) === matchId);
             if (idx === -1) return [arr, null];
             const copy = arr.slice();
             const [item] = copy.splice(idx, 1);
@@ -169,12 +172,17 @@ export function DeckProvider({ children }) {
 
         if (fromZone === toZone) return;
 
+        const generateInstanceId = () => `inst_${Date.now().toString(36)}_${Math.random().toString(36).slice(2,8)}`;
+
         let movedItem = null;
         if (fromZone === "decklist") {
-            const [newDecklist, item] = popFrom(decklist, cardId);
-            if (item) {
-                setDecklist(newDecklist);
-                movedItem = item;
+            const idx = decklist.findIndex(c => c.id === cardId);
+            if (idx !== -1 && (decklist[idx].count || 0) > 0) {
+                const item = decklist[idx];
+                const updated = decklist.slice();
+                updated[idx] = { ...item, count: (item.count || 0) - 1 };
+                setDecklist(updated);
+                movedItem = { ...item, instanceId: generateInstanceId() };
             }
         } else if (fromZone === "hand") {
             const [newHand, item] = popFrom(hand, cardId);
@@ -198,8 +206,19 @@ export function DeckProvider({ children }) {
 
         if (!movedItem) return;
 
-        if (toZone === "decklist") setDecklist(d => [...d, movedItem]);
-        else if (toZone === "hand") setHand(d => [...d, movedItem]);
+        if (toZone === "decklist") {
+            // return a copy to deck: increment count
+            setDecklist(d => {
+                const idx = d.findIndex(c => c.id === movedItem.id);
+                if (idx !== -1) {
+                    const copy = d.slice();
+                    copy[idx] = { ...copy[idx], count: (copy[idx].count || 0) + 1 };
+                    return copy;
+                }
+                // If not found, add new
+                return [...d, { ...movedItem, count: 1, instanceId: undefined }];
+            });
+        } else if (toZone === "hand") setHand(d => [...d, movedItem]);
         else if (toZone === "battlefield") setBattlefield(d => [...d, movedItem]);
         else if (toZone === "graveyard") setGraveyard(d => [...d, movedItem]);
 

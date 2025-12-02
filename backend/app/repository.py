@@ -3,7 +3,7 @@ import sqlite3
 import json
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
-from typing import List, Tuple
+from typing import List, Tuple, Optional
 
 from .models import CardBase
 
@@ -72,13 +72,15 @@ def query_cards(
         allowed = {"name", "set_name", "set_code", "collector_number", "rarity", "cmc"}
         if order_by not in allowed:
             order_by = "name"
+        # Apply NOCASE collation for text columns only; leave numeric 'cmc' without collation
+        order_clause = f"ORDER BY {order_by} COLLATE NOCASE" if order_by != "cmc" else f"ORDER BY {order_by}"
         sql = f"""
             SELECT id, oracle_id, name, set_code, set_name, collector_number,
                    rarity, mana_cost, cmc, type_line, oracle_text, power, toughness,
                    colors, color_identity, image_uris
             FROM cards
             {where_clause}
-            ORDER BY {order_by} COLLATE NOCASE
+            {order_clause}
             LIMIT ? OFFSET ?
         """
         cur = conn.execute(sql, params + (limit, offset))
@@ -126,3 +128,60 @@ def get_cards_by_names_map(names: List[str]) -> dict:
             if key not in mapping:
                 mapping[key] = c
     return mapping
+
+
+def _get_card_by_name_exact(conn: sqlite3.Connection, name: str) -> Optional[CardBase]:
+    sql = """
+        SELECT id, oracle_id, name, set_code, set_name, collector_number,
+               rarity, mana_cost, cmc, type_line, oracle_text, power, toughness,
+               colors, color_identity, image_uris
+        FROM cards
+        WHERE name = ? COLLATE NOCASE
+        LIMIT 1
+    """
+    row = conn.execute(sql, (name,)).fetchone()
+    return _row_to_card(row) if row else None
+
+
+def _get_card_by_name_relaxed(conn: sqlite3.Connection, name: str) -> Optional[CardBase]:
+    # 1) exact
+    card = _get_card_by_name_exact(conn, name)
+    if card:
+        return card
+    # 2) ignore commas
+    sql = """
+        SELECT id, oracle_id, name, set_code, set_name, collector_number,
+               rarity, mana_cost, cmc, type_line, oracle_text, power, toughness,
+               colors, color_identity, image_uris
+        FROM cards
+        WHERE LOWER(REPLACE(name, ',', '')) = LOWER(REPLACE(?, ',', ''))
+        LIMIT 1
+    """
+    row = conn.execute(sql, (name,)).fetchone()
+    if row:
+        return _row_to_card(row)
+    # 3) fallback LIKE (may return near matches)
+    like = f"%{name}%"
+    sql = """
+        SELECT id, oracle_id, name, set_code, set_name, collector_number,
+               rarity, mana_cost, cmc, type_line, oracle_text, power, toughness,
+               colors, color_identity, image_uris
+        FROM cards
+        WHERE name LIKE ? COLLATE NOCASE
+        LIMIT 1
+    """
+    row = conn.execute(sql, (like,)).fetchone()
+    return _row_to_card(row) if row else None
+
+
+def get_cards_by_names_map_relaxed(names: List[str]) -> dict:
+    conn = _open_conn()
+    try:
+        mapping = {}
+        for n in names:
+            card = _get_card_by_name_relaxed(conn, n.strip())
+            if card and card.name:
+                mapping[n.lower()] = card
+        return mapping
+    finally:
+        conn.close()

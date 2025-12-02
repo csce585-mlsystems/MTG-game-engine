@@ -74,10 +74,10 @@ async def list_cards(request: CardSearchRequest):
         where_clauses.append("name LIKE ? COLLATE NOCASE")
         params.append(f"%{request.q}%")
     if request.set_code:
-        where_clauses.append("LOWER(set_code) = LOWER(?)")
+        where_clauses.append("set_code = ? COLLATE NOCASE")
         params.append(request.set_code)
     if request.rarity:
-        where_clauses.append("LOWER(rarity) = LOWER(?)")
+        where_clauses.append("rarity = ? COLLATE NOCASE")
         params.append(request.rarity)
     if request.names:
         placeholders = ",".join(["?"] * len(request.names))

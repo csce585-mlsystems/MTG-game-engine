@@ -228,16 +228,93 @@ def monte_carlo_probability_for_successes(total_cards: int,
     if random_seed is not None:
         random.seed(random_seed)
 
-    eff_p = effective_probability_for_successes(
-        total_cards=total_cards,
-        successes=successes,
-        oracle_texts=oracle_texts,
-        target_categories=target_categories
-    )
+    # Normalize inputs
+    total_cards = max(int(total_cards), 0)
+    successes = max(int(successes), 0)
+    num_simulations = max(int(num_simulations), 0)
+
+    if total_cards <= 0 or successes <= 0 or num_simulations <= 0:
+        return {
+            'probability': 0.0,
+            'theoretical_probability': (successes / total_cards) if total_cards > 0 else 0.0,
+            'absolute_error': 0.0,
+            'error_percentage': 0.0,
+            'simulations_run': num_simulations,
+            'hits': 0,
+            'execution_time_seconds': 0.0,
+            'simulations_per_second': 0.0,
+        }
+
+    # Aggregate oracle effects
+    extra_draws = 0
+    self_mill = 0
+    tutor_guarantee = False
+    if oracle_texts:
+        normalized_texts = " ".join(oracle_texts).lower()
+        ed, sm = _parse_draw_and_mill_effects(normalized_texts)
+        extra_draws += max(ed, 0)
+        self_mill += max(sm, 0)
+        # Tutor handling (if target categories supplied, any matching tutor guarantees success)
+        category_to_keyword = {
+            "artifact": "search your library for an artifact card",
+            "creature": "search your library for a creature card",
+            "land": "search your library for a land card",
+            "instant": "search your library for an instant card",
+            "sorcery": "search your library for a sorcery card",
+            "enchantment": "search your library for an enchantment card",
+            "planeswalker": "search your library for a planeswalker card",
+        }
+        if target_categories:
+            for cat in target_categories:
+                key = category_to_keyword.get(str(cat).lower())
+                if key and key in normalized_texts:
+                    tutor_guarantee = True
+                    break
+
+    if tutor_guarantee:
+        simulated_probability = 1.0
+        theoretical_probability = successes / total_cards if total_cards > 0 else 0.0
+        sim_time = time.time() - start_time
+        return {
+            'probability': simulated_probability,
+            'theoretical_probability': theoretical_probability,
+            'absolute_error': abs(simulated_probability - theoretical_probability),
+            'error_percentage': ((abs(simulated_probability - theoretical_probability) / theoretical_probability) * 100) if theoretical_probability > 0 else 0.0,
+            'simulations_run': num_simulations,
+            'hits': num_simulations,
+            'execution_time_seconds': sim_time,
+            'simulations_per_second': (num_simulations / sim_time) if sim_time > 0 else float('inf'),
+        }
+
+    # Cap to feasible ranges
+    self_mill = min(self_mill, max(total_cards - 1, 0))
+    draws = min(1 + max(extra_draws, 0), total_cards)
 
     hits = 0
     for _ in range(num_simulations):
-        if random.random() < eff_p:
+        remaining_total = total_cards
+        remaining_success = successes
+
+        # Mill cards uniformly without replacement
+        mill = min(self_mill, remaining_total)
+        for _mm in range(mill):
+            if remaining_total <= 0 or remaining_success <= 0:
+                break
+            if random.random() < (remaining_success / remaining_total):
+                remaining_success -= 1
+            remaining_total -= 1
+
+        trial_hit = False
+        if remaining_total > 0 and remaining_success > 0:
+            d = min(draws, remaining_total)
+            for _d in range(d):
+                if remaining_total <= 0:
+                    break
+                if remaining_success > 0 and random.random() < (remaining_success / remaining_total):
+                    trial_hit = True
+                    remaining_success -= 1
+                remaining_total -= 1
+        if trial_hit:
             hits += 1
 
     simulated_probability = hits / num_simulations if num_simulations > 0 else 0.0
@@ -265,48 +342,109 @@ def monte_carlo_probability(game_state: GameState,
                             random_seed: Optional[int] = None,
                             oracle_texts: Optional[List[str]] = None) -> dict:
     """
-    Monte Carlo simulation to predict probability of drawing a given category.
-    
-    Args:
-        game_state: Current game state to simulate from
-        category: Card category to simulate (e.g. "land", "creature", "spell")
-        num_simulations: Number of Monte Carlo trials to run
-        random_seed: Optional seed for reproducible results
-        
-    Returns:
-        Dictionary containing simulation results and detailed statistics
+    Monte Carlo simulation to predict probability of drawing a given category with support
+    for multiple oracle effects (extra draws, milling, tutors).
     """
     start_time = time.time()
-    
+
     if random_seed is not None:
         random.seed(random_seed)
-    
-    if game_state.total_cards == 0:
+
+    total_cards = game_state.total_cards
+    successes = int(game_state.card_counts.get(category, 0))
+
+    if total_cards <= 0 or successes <= 0 or num_simulations <= 0:
         return {
             'probability': 0.0,
-            'simulations_run': num_simulations,
-            'execution_time_seconds': time.time() - start_time,
+            'theoretical_probability': game_state.probability(category),
+            'absolute_error': 0.0,
+            'error_percentage': 0.0,
+            'simulations_run': max(int(num_simulations), 0),
+            'hits': 0,
+            'execution_time_seconds': 0.0,
+            'simulations_per_second': 0.0,
             'game_state': str(game_state),
             'category': category
         }
-    
+
+    # Effects
+    extra_draws = 0
+    self_mill = 0
+    tutor_guarantee = False
+    if oracle_texts:
+        normalized_texts = " ".join(oracle_texts).lower()
+        ed, sm = _parse_draw_and_mill_effects(normalized_texts)
+        extra_draws += max(ed, 0)
+        self_mill += max(sm, 0)
+        category_to_keyword = {
+            "artifact": "search your library for an artifact card",
+            "creature": "search your library for a creature card",
+            "land": "search your library for a land card",
+            "instant": "search your library for an instant card",
+            "sorcery": "search your library for a sorcery card",
+            "enchantment": "search your library for an enchantment card",
+            "planeswalker": "search your library for a planeswalker card",
+        }
+        key = category_to_keyword.get(str(category).lower())
+        if key and key in normalized_texts:
+            tutor_guarantee = True
+
+    if tutor_guarantee:
+        simulated_probability = 1.0
+        theoretical_probability = game_state.probability(category)
+        sim_time = time.time() - start_time
+        return {
+            'probability': simulated_probability,
+            'theoretical_probability': theoretical_probability,
+            'absolute_error': abs(simulated_probability - theoretical_probability),
+            'error_percentage': ((abs(simulated_probability - theoretical_probability) / theoretical_probability) * 100) if theoretical_probability > 0 else 0.0,
+            'simulations_run': num_simulations,
+            'hits': num_simulations,
+            'execution_time_seconds': sim_time,
+            'simulations_per_second': (num_simulations / sim_time) if sim_time > 0 else float('inf'),
+            'game_state': str(game_state),
+            'category': category
+        }
+
+    # Cap ranges
+    self_mill = min(self_mill, max(total_cards - 1, 0))
+    draws = min(1 + max(extra_draws, 0), total_cards)
+
     hits = 0
-    effective_probability = _effective_probability_with_oracle(game_state, category, oracle_texts)
-    
-    # Run simulations
     for _ in range(num_simulations):
-        if random.random() < effective_probability:
+        remaining_total = total_cards
+        remaining_success = successes
+
+        # Mill
+        mill = min(self_mill, remaining_total)
+        for _mm in range(mill):
+            if remaining_total <= 0 or remaining_success <= 0:
+                break
+            if random.random() < (remaining_success / remaining_total):
+                remaining_success -= 1
+            remaining_total -= 1
+
+        trial_hit = False
+        if remaining_total > 0 and remaining_success > 0:
+            d = min(draws, remaining_total)
+            for _d in range(d):
+                if remaining_total <= 0:
+                    break
+                if remaining_success > 0 and random.random() < (remaining_success / remaining_total):
+                    trial_hit = True
+                    remaining_success -= 1
+                remaining_total -= 1
+        if trial_hit:
             hits += 1
-    
-    # Calculate detailed statistics
-    simulated_probability = hits / num_simulations
+
+    simulated_probability = hits / num_simulations if num_simulations > 0 else 0.0
     theoretical_probability = game_state.probability(category)
     error = abs(simulated_probability - theoretical_probability)
     error_percentage = (error / theoretical_probability * 100) if theoretical_probability > 0 else 0
-    
+
     sim_time = time.time() - start_time
     simulations_per_second = num_simulations / sim_time if sim_time > 0 else 0
-    
+
     return {
         'probability': simulated_probability,
         'theoretical_probability': theoretical_probability,

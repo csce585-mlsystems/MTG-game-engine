@@ -208,3 +208,5 @@ __marimo__/
 
 infra/
 test_api.py
+
+backend/data
