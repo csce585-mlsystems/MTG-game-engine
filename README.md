@@ -104,6 +104,31 @@ End-to-end setup for a fresh clone:
    export OPENAI_API_KEY=sk-...    # optional
    uvicorn app.api:app --reload --host 0.0.0.0 --port 8000
    ```
+## Sample Deck
+A sample decklist is provided in `decklist.txt` for testing purposes.
+
+```
+4 Dragon's Rage Channeler
+4 Murktide Regent
+4 Lightning Bolt
+4 Counterspell
+2 Unholy Heat
+2 Archmage's Charm
+4 Consider
+4 Serum Visions
+4 Expressive Iteration
+4 Thought Scour
+4 Scalding Tarn
+4 Flooded Strand
+2 Polluted Delta
+2 Steam Vents
+1 Spirebluff Canal
+3 Island
+3 Mountain
+1 Otawara, Soaring City
+```
+
+You can use this decklist to test the engine's simulation capabilities, including probability calculations for specific cards, land ratios, and how card effects (like scry from Serum Visions or Consider) impact draw probabilities.
 
 ## User Testing
 To evaluate the practical utility of our MTG game engine, we conducted a user testing session with a group of players of varying experience levels.
