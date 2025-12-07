@@ -34,6 +34,10 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# Test log levels
+logger.warning("Backend starting - WARNING level test")
+logger.error("Backend starting - ERROR level test")
+
 def now_iso_utc() -> str: #Used for DB Timestamps
     """Return current UTC time in ISO 8601 format with Z suffix. Used for DB"""
     return datetime.utcnow().isoformat(timespec = "milliseconds") + "Z"

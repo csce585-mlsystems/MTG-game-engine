@@ -5,6 +5,7 @@ import re
 from pathlib import Path
 from typing import Dict, List, Optional, Sequence
 
+from dotenv import load_dotenv
 from openai import OpenAI
 
 from .models import CardEffectHint, CardBase
@@ -15,8 +16,26 @@ logger = logging.getLogger(__name__)
 # Inside the backend container, /app is the backend root, so effects live under data/effects.json
 _EFFECTS_PATH = Path(os.environ.get("EFFECTS_CATALOG_PATH", "data/effects.json"))
 _LLM_DEBUG_DIR = Path(os.environ.get("LLM_DEBUG_DIR", "data/llm_debug"))
+_EFFECTS_LLM_MODEL = os.environ.get("EFFECTS_LLM_MODEL", "gpt-4o-mini")
 _EFFECTS_CACHE: Optional[Dict[str, List[dict]]] = None
 _OPENAI_CLIENT: Optional[OpenAI] = None
+
+
+def _coerce_actions(value) -> List[dict]:
+    """
+    Normalise raw catalog values into a list of action dicts.
+    Supports both:
+      - {"Card Name": [ {...}, {...} ]}
+      - {"Card Name": {"actions": [ {...}, {...} ]}}
+    """
+    actions: List[dict] = []
+    if isinstance(value, list):
+        actions = [a for a in value if isinstance(a, dict)]
+    elif isinstance(value, dict):
+        inner = value.get("actions")
+        if isinstance(inner, list):
+            actions = [a for a in inner if isinstance(a, dict)]
+    return actions
 
 
 def _load_effects_catalog() -> Dict[str, List[dict]]:
@@ -27,7 +46,7 @@ def _load_effects_catalog() -> Dict[str, List[dict]]:
             raw = json.loads(_EFFECTS_PATH.read_text(encoding="utf-8"))
         except (FileNotFoundError, json.JSONDecodeError):
             raw = {}
-        _EFFECTS_CACHE = {k.lower(): v for k, v in raw.items()}
+        _EFFECTS_CACHE = {k.lower(): _coerce_actions(v) for k, v in raw.items()}
         logger.info("Loaded effects catalog with %d entries from %s", len(_EFFECTS_CACHE), _EFFECTS_PATH)
     return _EFFECTS_CACHE
 
@@ -36,7 +55,10 @@ def _get_openai_client() -> Optional[OpenAI]:
     global _OPENAI_CLIENT
     if _OPENAI_CLIENT is not None:
         return _OPENAI_CLIENT
+    # Load .env if not already loaded (for local development)
+    load_dotenv()
     api_key = os.getenv("OPENAI_API_KEY")
+    logger.info(f"OPENAI_API_KEY is {'set' if api_key else 'not set'} (length: {len(api_key) if api_key else 0})")
     if not api_key:
         logger.info("OPENAI_API_KEY not set; skipping LLM effects enrichment")
         return None
@@ -88,49 +110,46 @@ def _llm_actions_for_card(name: str, oracle_text: str) -> Optional[List[dict]]:
         return None
     logger.info("Requesting LLM effects for card '%s'", name)
     prompt = _PROMPT_TEMPLATE.format(name=name, oracle_text=oracle_text)
+
+    # Use the same Responses API pattern as build_effects_catalog for compatibility
     try:
-        resp = client.chat.completions.create(
-            model="gpt-4.1-mini",
-            messages=[
-                {"role": "system", "content": "You output ONLY JSON matching the requested schema."},
-                {"role": "user", "content": prompt},
-            ],
+        resp = client.responses.create(
+            model=_EFFECTS_LLM_MODEL,
+            input=prompt,
             temperature=0.2,
         )
     except Exception:
-        logger.exception("LLM request failed for card '%s'", name)
+        logger.exception("Failed to call LLM for '%s'", name)
         return None
 
-    # Log raw response snapshot to inspect structure.
-    logger.info("LLM raw response for '%s': %s", name, repr(resp)[:800])
-
-    # Extract JSON object from first choice.
-    try:
-        msg = resp.choices[0].message
-    except Exception:
-        logger.exception("Failed to extract message from LLM response for '%s'", name)
-        return None
-
-    content = getattr(msg, "content", None)
-    logger.info("LLM content for '%s': %s", name, str(content)[:200])
-
+    # Extract first text block from Responses output
     text_payload = ""
-    if isinstance(content, str):
-        text_payload = content
-    elif isinstance(content, list):
-        parts = []
-        for part in content:
-            if isinstance(part, dict):
-                parts.append(part.get("text") or "")
-            else:
-                parts.append(str(part))
-        text_payload = "".join(parts)
-    elif isinstance(content, dict):
-        text_payload = content.get("text") or ""
-    else:
-        text_payload = str(content or "")
+    output = getattr(resp, "output", None)
+    if output is None and isinstance(resp, dict):
+        output = resp.get("output")
+    if not output:
+        return None
+    for item in output:
+        content = getattr(item, "content", None)
+        if content is None and isinstance(item, dict):
+            content = item.get("content")
+        if not content:
+            continue
+        for block in content:
+            block_type = getattr(block, "type", None)
+            if block_type is None and isinstance(block, dict):
+                block_type = block.get("type")
+            if block_type == "output_text":
+                text = getattr(block, "text", None)
+                if text is None and isinstance(block, dict):
+                    text = block.get("text")
+                if text:
+                    text_payload = str(text)
+                    break
+        if text_payload:
+            break
 
-    raw = text_payload.strip()
+    raw = (text_payload or "").strip()
     if raw.startswith("```"):
         chunks = raw.split("```")
         if len(chunks) >= 3:
@@ -155,19 +174,68 @@ def _llm_actions_for_card(name: str, oracle_text: str) -> Optional[List[dict]]:
     try:
         obj = json.loads(raw)
     except json.JSONDecodeError:
-        logger.warning("LLM output for '%s' was not valid JSON object: %s", name, raw[:160])
+        logger.warning("LLM output for '%s' was not valid JSON: %s", name, raw[:160])
         return None
 
-    if not isinstance(obj, dict):
-        logger.warning("LLM JSON root for '%s' is not an object: %s", name, str(obj)[:160])
+    actions: Optional[List[dict]] = None
+
+    # Preferred: object with "actions" array
+    if isinstance(obj, dict):
+        candidate = obj.get("actions")
+        if isinstance(candidate, list):
+            actions = [a for a in candidate if isinstance(a, dict)]
+        else:
+            logger.warning("LLM JSON for '%s' missing 'actions' array: %s", name, str(obj)[:160])
+    # Fallback: top-level array already representing actions
+    elif isinstance(obj, list):
+        actions = [a for a in obj if isinstance(a, dict)]
+    else:
+        logger.warning("LLM JSON root for '%s' is neither object nor list: %s", name, str(obj)[:160])
+
+    if actions is None:
         return None
 
-    actions = obj.get("actions")
-    if not isinstance(actions, list):
-        logger.warning("LLM JSON for '%s' missing 'actions' array: %s", name, str(content)[:160])
-        return None
     logger.info("Parsed %d actions for '%s' from LLM", len(actions), name)
     return actions
+
+
+def _fallback_actions_from_oracle_text(oracle_text: Optional[str]) -> List[dict]:
+    """
+    Deterministic fallback: derive simple draw actions directly from oracle text
+    when the LLM is unavailable or returns unusable output.
+    """
+    if not oracle_text:
+        return []
+    text = oracle_text.lower()
+
+    word_to_num = {
+        "one": 1, "two": 2, "three": 3, "four": 4, "five": 5,
+        "six": 6, "seven": 7, "eight": 8, "nine": 9, "ten": 10,
+        "eleven": 11, "twelve": 12, "thirteen": 13, "fourteen": 14,
+        "fifteen": 15, "sixteen": 16, "seventeen": 17, "eighteen": 18,
+        "nineteen": 19, "twenty": 20,
+    }
+
+    draws = 0
+    # Simple patterns that clearly apply to us
+    if "each player draws a card" in text:
+        draws += 1
+    if "target player draws a card" in text:
+        draws += 1
+
+    # Generic "draw/draws <X> card(s)"
+    for m in re.finditer(r"draws? (a|an|\d+|\w+) cards?", text):
+        token = m.group(1)
+        if token in ("a", "an"):
+            draws += 1
+        elif token.isdigit():
+            draws += int(token)
+        else:
+            draws += word_to_num.get(token, 0)
+
+    if draws <= 0:
+        return []
+    return [{"action": "draw", "count": draws}]
 
 
 def ensure_effects_for_cards(cards: Sequence[CardBase]) -> None:
@@ -190,13 +258,21 @@ def ensure_effects_for_cards(cards: Sequence[CardBase]) -> None:
         if key_lower in existing_lower:
             continue
         logger.info("Enriching effects for '%s' via LLM", name)
-        logger.info("Enriching effects for '%s' via LLM", name)
-        actions = _llm_actions_for_card(name, str(card.oracle_text))
-        # Distinguish between "no result" (None) and an empty list (valid but no deck effects)
+        try:
+            actions = _llm_actions_for_card(name, str(card.oracle_text))
+        except Exception:
+            # Best-effort: on any LLM error, treat as no structured actions
+            actions = None
+        # Deterministic fallback: derive actions directly from oracle text if LLM failed.
         if actions is None:
-            logger.warning("No actions returned for '%s'; skipping write", name)
-            continue
-        raw[name] = actions
+            actions = _fallback_actions_from_oracle_text(str(card.oracle_text))
+
+        # Distinguish between "no result" (None or empty) and a non-empty actions list.
+        if not actions:
+            logger.warning("No actions returned for '%s'; persisting empty actions list", name)
+            raw[name] = []
+        else:
+            raw[name] = actions
         existing_lower.add(key_lower)
         updated = True
 

@@ -17,6 +17,23 @@ EFFECTS_CATALOG_PATH = Path(os.environ.get("EFFECTS_CATALOG_PATH", "data/effects
 _EFFECTS_CACHE: Optional[Dict[str, List[dict]]] = None
 
 
+def _coerce_actions(value) -> List[dict]:
+    """
+    Normalise raw catalog values into a list of action dicts.
+    Supports both:
+      - {"Card Name": [ {...}, {...} ]}
+      - {"Card Name": {"actions": [ {...}, {...} ]}}
+    """
+    actions: List[dict] = []
+    if isinstance(value, list):
+        actions = [a for a in value if isinstance(a, dict)]
+    elif isinstance(value, dict):
+        inner = value.get("actions")
+        if isinstance(inner, list):
+            actions = [a for a in inner if isinstance(a, dict)]
+    return actions
+
+
 @dataclass
 class EffectModifiers:
     extra_draws: float = 0.0
@@ -33,7 +50,7 @@ def _load_effects_catalog() -> Dict[str, List[dict]]:
             raw = json.loads(EFFECTS_CATALOG_PATH.read_text(encoding="utf-8"))
         except (FileNotFoundError, json.JSONDecodeError):
             raw = {}
-        _EFFECTS_CACHE = {k.lower(): v for k, v in raw.items()}
+        _EFFECTS_CACHE = {k.lower(): _coerce_actions(v) for k, v in raw.items()}
     return _EFFECTS_CACHE
 
 

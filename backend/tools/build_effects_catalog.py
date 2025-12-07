@@ -86,8 +86,8 @@ def main() -> None:
     )
     parser.add_argument(
         "--model",
-        default="gpt-4.1-mini",
-        help="OpenAI model name (default: gpt-4.1-mini)",
+        default="gpt-4o-mini",
+        help="OpenAI model name (default: gpt-4o-mini)",
     )
     parser.add_argument(
         "--sleep",
