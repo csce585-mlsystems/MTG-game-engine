@@ -28,6 +28,11 @@ export async function simulateByCard(payload) {
   return postJson("/simulate/by-card", payload);
 }
 
+export async function simulateFullState(payload) {
+  // payload: { deck: [{ name, count }], top_zone: [names], bottom_zone: [names], num_simulations, random_seed? }
+  return postJson("/simulate/full-state", payload);
+}
+
 // Optional helpers for other UI panels
 export async function cardSearch(payload) {
   return postJson("/cards", payload);
@@ -41,6 +46,7 @@ export default {
   resolveDeck,
   simulateByNames,
   simulateByCard,
+  simulateFullState,
   cardSearch,
   cardsByNames,
 };

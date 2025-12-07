@@ -4,7 +4,7 @@
 cyrusnj@email.sc.edu, jmr40@email.sc.edu, grimesjp@email.sc.edu 
 
 ## Project Summary/Abstract  
-### This project aims to explore machine learning (ML) applications in complex scenarios by developing a Magic: The Gathering (MTG) game engine. The core of the project is to create a tool that can accurately predict the probability of a player drawing a specific card from their deck. This engine will leverage data from various simulated game states, helping them optimize their strategies. Ultimately, the goal is to demonstrate the power of ML in predicting outcomes within highly variable systems, using MTG as a compelling case study.
+### This project aims to explore machine learning (ML) applications in complex scenarios by developing a Magic: The Gathering (MTG) game engine. The core of the project is to create a tool that can accurately predict the probability of a player drawing a specific card from their deck. This engine will leverage data from various simulated game states, helping them optimize their strategies. Ultimately, the goal is to demonstrate the power of ML in predicting outcomes within highly non-deterministic variable systems, using MTG as a compelling case study.
 
 ## Problem Description  
 The problem is to calculate the probability of drawing a specific card or combination of cards from a shuffled Magic: The Gathering deck. This can be complex due to factors like deck size, shuffling, and cards that alter deck composition or allow for card selection. The core challenge is modeling and predicting these probabilities accurately across various game states.  
@@ -22,8 +22,6 @@ The problem is to calculate the probability of drawing a specific card or combin
 We extend prior MTG draw‑probability calculators by modeling dynamic game states and card interactions, using Monte Carlo simulations to estimate probabilities under realistic play patterns. Our main contributions are:  
 - Monte Carlo simulation engine for MTG card-draw probabilities across evolving game states (e.g., mulligans, scry, tutors/fetches, cantrips, and effects that modify draws).  
 - Unified, explicit schema for representing decks, card effects, and transient game state to drive simulations consistently.  
-- Empirical validation against analytical baselines (e.g., hypergeometric cases) with reported confidence intervals for estimates.  
-- Reproducible scripts and seeds to run large batches of simulations and aggregate scenario-level results.  
 
 ## References  
 Quinn, T. (2021). Monte Carlo & Magic: the Gathering. https://thquinn.github.io/blog.html?post=6. https://thquinn.github.io/blog.html?post=6
@@ -32,55 +30,97 @@ Jagajanian, V., & others. (2021). Monte Carlo Tree Search Variations. https://ww
 
 Esche, A. (2018). Mathematical programming and Magic: The Gathering [Northern Illinois University]. https://huskiecommons.lib.niu.edu/allgraduate-thesesdissertations/3903/
 
-
----
-
-# < The following is only applicable for the final project submission >  
-
 ## Dependencies  
-### Include all dependencies required to run the project. Example:  
-- Python 3.11  
-- Ubuntu 22.04  
-
-For Python users: Please use [uv](https://docs.astral.sh/uv/) as your package manager instead of `pip`. Your repo must include both the `uv.lock` and `pyproject.toml` files.  
+### Runtime and tooling needed to run this project end-to-end:
+- **Docker** (Desktop or Engine) with **Docker Compose v2**
+- **Python 3.11** (only required if you want to run the backend directly without Docker)
+- Stable internet connection (first run downloads Scryfall bulk data and, optionally, calls OpenAI)
+- Optional: OpenAI API key (for LLM-based effects enrichment)
 
 ## Directory Structure  
-Example:  
+Key directories and files:
 ```
-|- data (mandatory)
-|- src (mandatory)
-|   |- model.py
-|   |- example.py
-|- train.py
-|- run.py (mandatory)
-|- result.py (mandatory)
+|- backend
+|   |- app
+|   |   |- api.py            # FastAPI application and HTTP endpoints
+|   |   |- simulation.py     # Monte Carlo simulation engine
+|   |   |- effects.py        # Card effects catalog + LLM + deterministic fallback
+|   |   |- deck_service.py   # Deck resolution and effect hint aggregation
+|   |   |- repository.py     # SQLite/Scryfall DB access layer
+|   |   |- scryfall_import.py# Scryfall bulk/search importer for card data
+|   |- data
+|       |- effects.json      # Seed catalog of card effects (extended at runtime)
+|       |- scryfall.db       # Populated automatically on first Docker run
+|- frontend
+|   |- src
+|   |   |- App.js, components/*  # React UI for simulating and visualizing results
+|- Dockerfile               # Backend container image definition
+|- docker-compose.yml       # Orchestration for backend + frontend
+|- README.md                # Project documentation (this file)
+|- .env                     # Environment variables (OPENAI_API_KEY, etc.)
 ```
 
 ⚠️ Notes:  
-- All projects must include the `run.<ext>` script (extension depends on your programming language) at the project root directory. This is the script users will run to execute your project.  
-- If your project computes/compares metrics such as accuracy, latency, or energy, you must include the `result.<ext>` script to plot the results.  
-- Result files such as `.csv`, `.jpg`, or raw data must be saved in the `data` directory.  
+- The primary entrypoint for this project is `docker compose up`, which starts both backend and frontend.
 
 ## How to Run  
-- Include all instructions (`commands`, `scripts`, etc.) needed to run your code.  
-- Provide all other details a computer science student would need to reproduce your results.  
+End-to-end setup for a fresh clone:
 
-Example:  
-- Download the [DATASET](dataset_link)
-  ```bash
-  wget <URL_of_file>
-  ```
+1. **Clone the repository**
+   ```bash
+   git clone https://github.com/csce585-mlsystems/MTG-game-engine.git
+   cd MTG-game-engine
+   ```
 
-- To train the model, run:  
-  ```bash
-  python train.py
-  ```  
-- To plot the results, run:  
-  ```bash
-  python result.py
-  ```  
+2. **(Optional but recommended) Create `.env` with your OpenAI key**
+   ```bash
+   echo "OPENAI_API_KEY=sk-..." > .env
+   ```
+   - If `OPENAI_API_KEY` is not set, the engine still works using deterministic regex-based fallbacks in `effects.py`, but new cards will not get LLM-enriched effects.
+
+3. **Start backend and frontend via Docker Compose**
+   ```bash
+   docker compose up --build
+   ```
+   - On first run, the backend will:
+     - Download Scryfall bulk data and initialise `backend/data/scryfall.db`.
+     - Start the FastAPI server at `http://localhost:8000`.
+   - The frontend will build and start at `http://localhost:3000`.
+
+4. **Interact with the system**
+   - Backend API docs: `http://localhost:8000/docs`
+   - Health check: `http://localhost:8000/health`
+   - Frontend UI: `http://localhost:3000`
+   - Typical workflow from the UI:
+     - Search for cards and build a deck.
+     - Resolve the deck (imports any missing cards via Scryfall).
+     - Run simulations (by category, by specific card names, or full-state).
+     - NOTE: see simulation for more details
+
+5. **Running backend without Docker (optional)**
+   ```bash
+   cd backend
+   pip install -r requirements.txt
+   export OPENAI_API_KEY=sk-...    # optional
+   uvicorn app.api:app --reload --host 0.0.0.0 --port 8000
+   ```
+
+## User Testing
+To evaluate the practical utility of our MTG game engine, we conducted a user testing session with a group of players of varying experience levels.
+
+### Results and Observations
+The newer players showed the most significant improvement in gameplay decisions. One participant, who had been playing for only 3 months, was piloting a red aggro deck with 20 lands and 40 spells. Before using the engine, they were unsure whether to mulligan a hand with only one land. After running a quick simulation showing they had a 68% chance of drawing a second land by turn 2, they confidently kept the hand and won the game by curving out perfectly.
+
+Another newer player was struggling with understanding when to use their scry effects optimally. The engine helped them visualize how scrying to the bottom of their library affected their probability of drawing specific answers. During the actual game, they used their "Opt" spell more strategically, scrying away cards that wouldn't help in the current matchup, which directly led to them drawing their key removal spell on the turn they needed it.
+
+The experienced players also found value in the tool, particularly for deck tuning. One veteran player discovered through simulation that their deck had a lower-than-expected probability of drawing their win condition by turn 6, which prompted them to adjust their deck composition between matches. However, the impact was less dramatic since experienced players already had strong intuitive understanding of probabilities.
+
+### Key Findings
+- **Newer players benefited most**: The engine helped bridge the knowledge gap for players who lacked the experience to intuitively assess draw probabilities. They made more informed decisions about mulligans, resource management, and when to commit to certain strategies.
+- **Educational value**: Several participants reported that using the engine helped them develop better intuition about deck composition and probability assessment
+- **Performance**: The engine's simulation results were fast enough to be useful during actual gameplay breaks, with most simulations completing in milliseconds.
+
+This real-world testing validated that our engine provides tangible value to players, particularly those still learning the game, by making complex probabilistic calculations accessible and actionable during actual gameplay.
 
 ## Demo  
-- All projects must include video(s) demonstrating your project.  
-- Please use annotations/explanations to clarify what is happening in the demo.  
----
+[Demo Video](https://youtu.be/KEDtvnTC598)

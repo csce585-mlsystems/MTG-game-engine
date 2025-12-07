@@ -4,10 +4,25 @@ FastAPI endpoints for MTG land simulation
 from fastapi import FastAPI, HTTPException, Request, Response, Query #Added Response, Query
 import time
 import logging
-from typing import Optional, List
+from typing import Optional, List, Dict
 
-from .models import SimulationRequest, SimulationResponse, HealthResponse, CardListResponse, CardSearchRequest, CardNamesRequest, CardBase, ResolveDeckRequest, ResolveDeckResponse, SimulationByNamesRequest, SimulationByCardRequest
-from .simulation import GameState, monte_carlo_probability, monte_carlo_probability_for_successes
+from .models import (
+    SimulationRequest,
+    SimulationResponse,
+    HealthResponse,
+    CardListResponse,
+    CardSearchRequest,
+    CardNamesRequest,
+    CardBase,
+    ResolveDeckRequest,
+    ResolveDeckResponse,
+    SimulationByNamesRequest,
+    SimulationByCardRequest,
+    FullStateSimulationRequest,
+    FullStateSimulationResponse,
+    FullStateSimulationCardResult,
+)
+from .simulation import GameState, monte_carlo_probability, monte_carlo_probability_for_successes, monte_carlo_full_state
 from datetime import datetime #Added Datetime
 from .repository import run_db, count_cards, query_cards, get_cards_by_names, DB_PATH
 from .deck_service import resolve_deck
@@ -18,6 +33,10 @@ logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
+
+# Test log levels
+logger.warning("Backend starting - WARNING level test")
+logger.error("Backend starting - ERROR level test")
 
 def now_iso_utc() -> str: #Used for DB Timestamps
     """Return current UTC time in ISO 8601 format with Z suffix. Used for DB"""
@@ -117,19 +136,22 @@ async def simulate_by_names(request: SimulationByNamesRequest):
 
     # Collect oracle texts for selected names (if provided)
     oracle_texts = None
+    oracle_card_names = None
     if request.oracle_names:
         lower = {n.lower() for n in request.oracle_names}
         oracle_texts = [
             rc.card.oracle_text for rc in resolved.resolved
             if rc.card.name and rc.card.name.lower() in lower and rc.card.oracle_text
         ]
+        oracle_card_names = request.oracle_names
 
     result = monte_carlo_probability(
         game_state=game_state,
         category=request.category,
         num_simulations=request.num_simulations,
         random_seed=request.random_seed,
-        oracle_texts=oracle_texts
+        oracle_texts=oracle_texts,
+        oracle_card_names=oracle_card_names
     )
     return SimulationResponse(**result)
 
@@ -148,12 +170,14 @@ async def simulate_by_card(request: SimulationByCardRequest):
 
     # Collect oracle texts for selected names (if provided)
     oracle_texts = None
+    oracle_card_names = None
     if request.oracle_names:
         lower = {n.lower() for n in request.oracle_names}
         oracle_texts = [
             rc.card.oracle_text for rc in resolved.resolved
             if rc.card.name and rc.card.name.lower() in lower and rc.card.oracle_text
         ]
+        oracle_card_names = request.oracle_names
 
     result = monte_carlo_probability_for_successes(
         total_cards=total_cards,
@@ -161,7 +185,8 @@ async def simulate_by_card(request: SimulationByCardRequest):
         num_simulations=request.num_simulations,
         random_seed=request.random_seed,
         oracle_texts=oracle_texts,
-        target_categories=target_categories
+        target_categories=target_categories,
+        oracle_card_names=oracle_card_names
     )
 
     # Adapt to SimulationResponse schema
@@ -170,6 +195,45 @@ async def simulate_by_card(request: SimulationByCardRequest):
         'category': 'specific_cards'
     })
     return SimulationResponse(**result)
+
+@app.post("/simulate/full-state", response_model=FullStateSimulationResponse)
+async def simulate_full_state_endpoint(request: FullStateSimulationRequest):
+
+    deck_counts: Dict[str, int] = {}
+    for entry in request.deck:
+        if entry.count and entry.count > 0:
+            key = entry.name
+            deck_counts[key] = deck_counts.get(key, 0) + entry.count
+
+    try:
+        sim_result = monte_carlo_full_state(
+            deck_counts=deck_counts,
+            top_zone=request.top_zone,
+            bottom_zone=request.bottom_zone,
+            num_simulations=request.num_simulations,
+            random_seed=request.random_seed,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    # Convert into typed Pydantic models
+    card_results = []
+    for name, payload in sim_result["results"].items():
+        card_results.append(
+            FullStateSimulationCardResult(
+                name=name,
+                copies_total=payload["copies_total"],
+                p_now=payload["p_now"],
+                p_next=payload["p_next"],
+            )
+        )
+
+    return FullStateSimulationResponse(
+        total_cards=sim_result["total_cards"],
+        num_simulations=sim_result["num_simulations"],
+        execution_time_seconds=sim_result["execution_time_seconds"],
+        results=card_results,
+    )
 
 @app.post("/simulate", response_model=SimulationResponse)
 async def simulate_card_probability(request: SimulationRequest):

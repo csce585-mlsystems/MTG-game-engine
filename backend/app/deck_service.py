@@ -2,7 +2,7 @@ from typing import List, Dict, Tuple
 
 from .models import DeckNameCount, ResolveDeckResponse, ResolvedCard, CardEffectHint, CardBase
 from .repository import get_cards_by_names_map, get_cards_by_names_map_relaxed, DB_PATH
-from .effects import extract_effect_hints
+from .effects import extract_effect_hints, ensure_effects_for_cards
 
 # Optional: import Scryfall search inserter for fallback resolution
 try:
@@ -42,6 +42,11 @@ def derive_counts(resolved: List[ResolvedCard]) -> Dict[str, int]:
 def resolve_deck(deck: List[DeckNameCount], auto_fetch: bool = True) -> ResolveDeckResponse:
     names = [d.name for d in deck]
     name_to_card = get_cards_by_names_map(names)
+    # Best-effort: enrich effects catalog for any of these cards using the LLM
+    try:
+        ensure_effects_for_cards(list(name_to_card.values()))
+    except Exception:
+        pass
 
     resolved: List[ResolvedCard] = []
     unresolved: List[str] = []
@@ -52,7 +57,7 @@ def resolve_deck(deck: List[DeckNameCount], auto_fetch: bool = True) -> ResolveD
         if not card:
             unresolved.append(entry.name)
             continue
-        effects: List[CardEffectHint] = extract_effect_hints(card.oracle_text)
+        effects: List[CardEffectHint] = extract_effect_hints(card.oracle_text, card.name)
         resolved.append(ResolvedCard(card=card, count=entry.count, effects=effects))
 
     # If we failed to resolve some names, try to fetch them via Scryfall and re-resolve once
@@ -89,7 +94,7 @@ def resolve_deck(deck: List[DeckNameCount], auto_fetch: bool = True) -> ResolveD
             if not card:
                 unresolved_after.append(entry.name)
                 continue
-            effects: List[CardEffectHint] = extract_effect_hints(card.oracle_text)
+            effects: List[CardEffectHint] = extract_effect_hints(card.oracle_text, card.name)
             resolved_after.append(ResolvedCard(card=card, count=entry.count, effects=effects))
         derived = derive_counts(resolved_after)
         return ResolveDeckResponse(resolved=resolved_after, unresolved=unresolved_after, derived_counts=derived)

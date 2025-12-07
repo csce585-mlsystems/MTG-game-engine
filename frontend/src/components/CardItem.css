@@ -1,87 +1,137 @@
 .card-item {
   position: relative;
-  border-radius: 8px;
+  border-radius: 6px;
   overflow: hidden;
-  background: #111;
-  aspect-ratio: 0.68; /* portrait, slightly slimmer */
-  box-shadow: 0 2px 6px rgba(0,0,0,0.25);
+  user-select: none;
+  -webkit-user-select: none;
+  -ms-user-select: none;
 }
 
-.card-item img {
+.card-item.grid {
+  width: 100%;
+  aspect-ratio: 0.72;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.25);
+  background: #111;
+}
+
+.grid-img {
   width: 100%;
   height: 100%;
   object-fit: cover;
-  display: block;
 }
 
-.card-item .overlay {
+.prob-overlay {
   position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  padding: 4px 6px;
+  bottom: 4px;
+  right: 4px;
+  padding: 2px 6px;
+  font-size: 12px;
   color: #fff;
-  font-size: 11px;
+  background: rgba(0, 0, 0, 0.7);
+  border-radius: 4px;
+  text-shadow: 0 1px 2px rgba(0,0,0,0.8);
+}
+
+.grid-count {
+  position: absolute;
+  top: 4px;
+  left: 4px;
+  padding: 1px 6px;
+  font-size: 12px;
+  color: #fff;
+  background: rgba(0, 0, 0, 0.6);
+  border: 1px solid rgba(255,255,255,0.18);
+  border-radius: 10px;
   line-height: 1.2;
-  background: linear-gradient(180deg, rgba(0,0,0,0) 0%, rgba(0,0,0,0.78) 70%);
 }
 
-.card-item .title {
+.card-item.list {
+  height: 72px;
+  width: 100%;
+  border-radius: 6px;
+}
+
+.list-art {
+  width: 100%;
+  height: 100%;
+  background-size: cover;
+  background-position: center;
+  display: flex;
+  align-items: flex-end;
+}
+
+.list-name {
+  width: 100%;
+  padding: 6px 10px;
+  font-size: 14px;
   font-weight: 600;
-  text-shadow: 0 1px 3px rgba(0,0,0,0.7);
+  color: #fff;
+  background: linear-gradient(to top,
+      rgba(0, 0, 0, 0.8),
+      rgba(0, 0, 0, 0));
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  text-shadow: 0 1px 2px rgba(0,0,0,0.9);
 }
 
-.card-item .prob {
-  opacity: 0.9;
+.list-count {
+  margin-right: 8px;
+  background: rgba(0, 0, 0, 0.55);
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+.list-prob {
+  background: rgba(0, 0, 0, 0.7);
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 13px;
+}
+
+.card-item.zone {
+  width: 110px;
+  height: 155px;
+}
+
+.zone-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.effect-toggle {
+  position: absolute;
+  top: 6px;
+  left: 6px;
+  padding: 2px 6px;
+  border-radius: 6px;
+  font-size: 11px;
+  line-height: 1;
+  color: #eaeaea;
+  background: rgba(0,0,0,0.6);
+  border: 1px solid rgba(255,255,255,0.18);
+  cursor: pointer;
+}
+.effect-toggle.active {
+  background: rgba(76, 175, 80, 0.6);
+  border-color: rgba(76,175,80,0.8);
+  color: #fff;
 }
 
 .card-star {
   position: absolute;
   top: 6px;
   right: 6px;
-  background: rgba(0,0,0,0.45);
-  border: 1px solid rgba(255,255,255,0.2);
-  color: gold;
+  background: rgba(0, 0, 0, 0.65);
+  color: #c7c7c7;
+  border: 1px solid rgba(255, 255, 255, 0.22);
   border-radius: 4px;
+  padding: 1px 4px;
   cursor: pointer;
-  line-height: 1;
-  padding: 1px 5px;
-  font-size: 12px;
 }
 
 .card-star.active {
-  background: rgba(255,215,0,0.18);
-  border-color: rgba(255,215,0,0.6);
-  box-shadow: 0 0 0 1px rgba(255,215,0,0.2) inset;
-}
-
-.card-count {
-  position: absolute;
-  top: 6px;
-  left: 6px;
-  min-width: 18px;
-  height: 18px;
-  padding: 0 6px;
-  border-radius: 10px;
-  background: rgba(0,0,0,0.65);
-  color: #fff;
-  font-size: 11px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border: 1px solid rgba(255,255,255,0.2);
-}
-
-.card-grid {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(100px, 1fr));
-  gap: 8px;
-}
-
-/* Compact grid for zones (hand/battlefield/graveyard): fixed small tiles */
-.zone-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, 120px);
-  gap: 8px;
-  justify-content: start;
+  color: gold;
+  background: rgba(255, 215, 0, 0.3);
 }
